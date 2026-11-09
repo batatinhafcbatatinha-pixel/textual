@@ -5,15 +5,31 @@
 [![PyPI version](https://badge.fury.io/py/textual.svg?)](https://badge.fury.io/py/textual)
 ![OS support](https://img.shields.io/badge/OS-macOS%20Linux%20Windows-red)
 
+> [!IMPORTANT]
+> ## ✨ O que este fork adiciona ao Textual
+>
+> | | Recurso | Exemplo |
+> |---|---|---|
+> | 🖼️ | **Widget `Image` nativo**: imagens de verdade com Sixel, ou blocos `▀` coloridos em terminais sem Sixel | `yield Image("foto.png", fit="cover")` |
+> | 🎬 | **Widget `Video` com áudio**: PyAV + sounddevice, áudio como relógio mestre, descarte de quadros atrasados, ~27–30 fps no Windows Terminal | `yield Video("filme.mp4", autoplay=True)` |
+> | 🌄 | **Imagem de fundo em qualquer widget** (inclusive na `Screen`), com widgets transparentes deixando a imagem aparecer | `Screen { background-image: "fundo.jpg"; }` |
+> | 🎨 | **`background-color`** (alias de `background`) e **`background` aceitando imagem** | `background: $panel "textura.png" contain;` |
+> | ⚡ | **Sem flicker** ao rolar, redimensionar, abrir menus ou digitar: o texto nunca apaga a imagem, a imagem só é reenviada quando muda (ou só o pedaço que precisa), e tudo sai num único frame sincronizado | — |
+> | 🪟 | **Windows Terminal de primeira classe**: detecção automática de Sixel, tamanho da célula e *synchronized output*, que o Textual original nunca ativava no Windows | — |
+> | 🚀 | **Codificador Sixel vetorizado** (NumPy): ~22 ms para um quadro de 880×520 px | — |
+>
+> ```bash
+> pip install "textual[media] @ git+https://github.com/batatinhafcbatatinha-pixel/textual.git"
+> python examples/media/background_demo.py    # ou image_demo.py / video_demo.py
+> ```
+>
+> 📖 Documentação completa: [Imagens, vídeo e fundos (Sixel)](#imagens-e-vídeo-nativos-sixel--recurso-deste-fork)
+
 
 
 ![textual-splash](https://github.com/user-attachments/assets/4caeb77e-48c0-4cf7-b14d-c53ded855ffd)
 
 # Textual
-
-> **Fork:** esta versão inclui widgets nativos de **imagem e vídeo com Sixel, sem flicker**,
-> e **imagem de fundo** em qualquer widget (`background-image`, `background-color`, `background: cor "imagem"`).
-> Veja [Imagens e vídeo nativos](#imagens-e-vídeo-nativos-sixel--recurso-deste-fork).
 
 <img align="right" width="250" alt="clock" src="https://github.com/user-attachments/assets/63e839c3-5b8e-478d-b78e-cf7647eb85e8" />
 
