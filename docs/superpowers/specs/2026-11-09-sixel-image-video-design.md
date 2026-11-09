@@ -84,7 +84,10 @@ sixel no WT) e depois a imagem era redesenhada: apaga → redesenha = pisca.
   - área de placement antigo que deixou de ser gráfica (widget rolou, saiu,
     encolheu) → adicionada às regiões sujas; o texto escrito apaga o resto da
     imagem antiga;
-  - full update (resize, troca de tela) → reemite todos os placements.
+  - terminal redimensionado (tamanho da tela mudou) → reemite todos os placements;
+    troca de tela chama `Compositor.reset_graphics()` (via `_on_screen_suspend`).
+  - um placement reescrito por trás de outro que o sobrepõe força a reescrita do
+    da frente (ordem de trás para frente).
 - O resultado é uma lista `graphics: list[tuple[Offset, str]]` anexada ao
   `LayoutUpdate`/`ChopsUpdate`.
 
@@ -101,11 +104,12 @@ O sixel vem antes do texto para que widgets sobrepostos sejam escritos por cima.
 ### 5. Encoder sixel (`textual/_sixel.py`)
 
 - Entrada: `PIL.Image` RGB já no tamanho final em pixels.
-- Quantização: `Image.quantize(colors=N, method=FASTOCTREE)` (C). `N` padrão 256
-  para `Image`, 128 para `Video` (mais rápido).
-- Para cada banda de 6 linhas (NumPy): calcula o valor sixel (0..63) por coluna
-  para cada cor presente na banda, converte para bytes (`+63`) e aplica RLE com
-  `re.sub` em bytes (velocidade de C). Emite `#c` + dados + `$`, e `-` entre bandas.
+- Quantização: `fast=True` (vídeo) usa `FASTOCTREE`; `fast=False` (imagem) usa
+  `MEDIANCUT` numa cópia reduzida para gerar a paleta e mapeia a imagem inteira
+  nela. `colors` padrão 256 para `Image`, 128 para `Video`.
+- Uma linha de saída por par (banda, cor) presente, montada com NumPy; detecção de
+  runs e montagem final (`#c`, `!n`, `$`, `-`) totalmente vetorizadas.
+- Desempenho medido: ~22 ms para 880×520 px com 128 cores.
 - Cabeçalho `DCS 0;1;0 q "1;1;W;H` (P2=1: pixels de valor 0 não alteram a tela;
   como todos os pixels são pintados, a imagem é opaca).
 - Cache LRU por `(id da fonte, generation, tamanho em px, crop)`.
@@ -133,11 +137,12 @@ participa dos placements.
 ```python
 Image(source: str | Path | bytes | PIL.Image.Image | None = None, *,
       fit: Literal["contain", "cover", "fill"] = "contain",
-      render: Literal["auto", "sixel", "halfblock"] = "auto",
-      name=None, id=None, classes=None, disabled=False)
+      render_mode: Literal["auto", "sixel", "halfblock"] = "auto",
+      colors: int = 256, name=None, id=None, classes=None, disabled=False)
 ```
 
-- Reativos: `image` (aceita os mesmos tipos de `source`), `fit`, `render`.
+- `image` (propriedade; aceita os mesmos tipos de `source`), reativos `fit` e
+  `render_mode`.
 - Exportado em `textual.widgets`.
 
 ### `Video` (`textual/widgets/_video.py`)
@@ -145,24 +150,28 @@ Image(source: str | Path | bytes | PIL.Image.Image | None = None, *,
 ```python
 Video(source: str | Path, *, autoplay: bool = False, loop: bool = False,
       audio: bool = True, max_fps: float | None = None,
-      fit=..., render=..., name=None, id=None, classes=None, disabled=False)
+      fit=..., render_mode=..., colors: int = 128,
+      name=None, id=None, classes=None, disabled=False)
 ```
 
 - Métodos: `play()`, `pause()`, `toggle()`, `seek(seconds)`, `stop()`.
-- Reativos somente leitura: `position`, `duration`, `playing`, `muted`.
+- Reativos: `position`, `duration`, `playing`, `muted`. Estatísticas:
+  `frames_shown`, `frames_dropped`.
 - Teclas (com foco): `space` play/pause, `left`/`right` ±5 s, `m` mudo.
 - Mensagens: `Video.Started`, `Video.Paused`, `Video.Finished`.
 - Threads:
   - **decoder** (PyAV): decodifica, descarta frames atrasados em relação ao
     relógio, redimensiona com `frame.reformat(w, h, "rgb24")` (swscale) para o
     tamanho em pixels atual, quantiza e codifica o sixel; entrega o frame pronto
-    ao widget via `call_from_thread`. Fila de tamanho 1–2 (sempre o mais recente).
+    sem esperar (`loop.call_soon_threadsafe`) num slot de 1 frame: se a UI ainda
+    não exibiu o anterior, ele é substituído (descartado).
   - **áudio** (`sounddevice.OutputStream` com callback): fonte do relógio mestre
     (amostras tocadas ÷ sample rate). Sem áudio ou sem `sounddevice` → relógio de
     `time.perf_counter`.
-- Controle de vazão: se o frame anterior ainda não foi exibido quando o próximo
-  fica pronto, o anterior é descartado (o fps se adapta ao terminal). `max_fps`
-  limita explicitamente.
+- Controle de vazão: frames atrasados em relação ao relógio são descartados antes
+  de codificar; o slot de 1 frame descarta os que a UI não exibiu a tempo.
+  `max_fps` limita explicitamente. Medido no Windows Terminal: ~27–30 fps em
+  88×26 células (880×520 px).
 - `seek` reinicia decoder e áudio na nova posição; `on_unmount` encerra as threads.
 
 ## Dependências

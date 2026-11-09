@@ -2,11 +2,13 @@
 
 Run with: python examples/media/video_demo.py [video]
 
-Keys: space = play/pause, left/right = seek, m = mute, f = cycle fit.
+Keys: space = play/pause, left/right = seek, m = mute, f = cycle fit, l = loop.
+Options: --mute starts muted, --loop loops.
 """
 
 import sys
 from pathlib import Path
+from time import monotonic
 
 from textual.app import App, ComposeResult
 from textual.containers import Vertical
@@ -24,9 +26,10 @@ class VideoDemo(App):
     """
     BINDINGS = [("f", "cycle_fit", "Cycle fit"), ("l", "toggle_loop", "Loop")]
 
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, muted: bool = False) -> None:
         super().__init__()
         self.path = path
+        self.muted = muted
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -37,17 +40,27 @@ class VideoDemo(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.set_interval(0.2, self.update_status)
+        self.query_one(Video).muted = self.muted
+        self.query_one(Video).loop = getattr(self, "loop", False)
+        self._last_frames = (0, 0.0)
+        self.fps = 0.0
+        self.set_interval(0.5, self.update_status)
 
     def update_status(self) -> None:
         video = self.query_one(Video)
+        frames, last_time = self._last_frames
+        now = monotonic()
+        if last_time:
+            self.fps = (video.frames_shown - frames) / (now - last_time)
+        self._last_frames = (video.frames_shown, now)
         bar = self.query_one(ProgressBar)
         bar.update(total=video.duration or None, progress=video.position)
         state = "▶" if video.playing else "⏸"
         mute = " 🔇" if video.muted else ""
         self.query_one("#status", Label).update(
             f"{state} {video.position:6.1f}s / {video.duration:.1f}s  fit={video.fit}"
-            f"  loop={video.loop}{mute}"
+            f"  loop={video.loop}{mute}  {self.fps:4.1f} fps"
+            f"  shown={video.frames_shown} dropped={video.frames_dropped}"
         )
 
     def action_cycle_fit(self) -> None:
@@ -60,4 +73,8 @@ class VideoDemo(App):
 
 
 if __name__ == "__main__":
-    VideoDemo(sys.argv[1] if len(sys.argv) > 1 else str(SAMPLE)).run()
+    args = [arg for arg in sys.argv[1:] if arg != "--mute"]
+    args = [arg for arg in args if arg != "--loop"]
+    app = VideoDemo(args[0] if args else str(SAMPLE), muted="--mute" in sys.argv)
+    app.loop = "--loop" in sys.argv
+    app.run()

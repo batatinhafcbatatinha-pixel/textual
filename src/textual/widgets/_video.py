@@ -238,6 +238,8 @@ class _Decoder:
         self._on_end = on_end
         self._min_interval = 1 / max_fps if max_fps else 0.0
         self._single_frame = single_frame
+        self.dropped = 0
+        """Frames dropped because they were late."""
         self._stop = threading.Event()
         self._thread = threading.Thread(
             target=self._run, name="textual-video-decoder", daemon=True
@@ -310,6 +312,7 @@ class _Decoder:
                         return
                     # Too late? Drop it (the next frame will be closer to the clock)
                     if clock.time() - time > frame_duration:
+                        self.dropped += 1
                         continue
 
                 rendered = self._render(frame, time)
@@ -427,6 +430,11 @@ class Video(GraphicsWidget, can_focus=True):
         self._decoder: _Decoder | None = None
         self._audio_output: _AudioOutput | None = None
         self._clock: _Clock | None = None
+        self.frames_shown = 0
+        self._pending_frame: _Frame | None = None
+        self._pending_lock = threading.Lock()
+        """Number of frames displayed since the widget was created."""
+        self._frames_dropped = 0
 
     # -- Public API ---------------------------------------------------------
 
@@ -579,8 +587,15 @@ class Video(GraphicsWidget, can_focus=True):
         )
         self._decoder.start()
 
+    @property
+    def frames_dropped(self) -> int:
+        """Number of frames dropped because they were late (the terminal couldn't keep up)."""
+        current = self._decoder.dropped if self._decoder is not None else 0
+        return self._frames_dropped + current
+
     def _stop_playback(self) -> None:
         if self._decoder is not None:
+            self._frames_dropped += self._decoder.dropped
             self._decoder.stop()
             self._decoder = None
         if self._audio_output is not None:
@@ -604,16 +619,42 @@ class Video(GraphicsWidget, can_focus=True):
         self._decoder.start()
 
     def _deliver_from_thread(self, frame: _Frame) -> None:
+        """Hand a frame to the app thread without waiting.
+
+        Only the most recent frame is kept: if the app hasn't shown the previous
+        frame yet, it is replaced (dropped), so decoding never waits for the terminal.
+        """
+        with self._pending_lock:
+            replaced = self._pending_frame is not None
+            self._pending_frame = frame
+        if replaced:
+            if self._decoder is not None:
+                self._decoder.dropped += 1
+            return
+        loop = self.app._loop
+        if loop is None:
+            return
         try:
-            self.app.call_from_thread(self._present, frame)
-        except Exception:
-            pass
+            loop.call_soon_threadsafe(self._present_pending)
+        except RuntimeError:
+            pass  # Loop closed
+
+    def _present_pending(self) -> None:
+        with self._pending_lock:
+            frame = self._pending_frame
+            self._pending_frame = None
+        if frame is not None:
+            self._present(frame)
 
     def _end_from_thread(self) -> None:
+        # Must not wait: `_on_end` may stop (and join) the calling decoder thread.
+        loop = self.app._loop
+        if loop is None:
+            return
         try:
-            self.app.call_from_thread(self._on_end)
-        except Exception:
-            pass
+            loop.call_soon_threadsafe(self._on_end)
+        except RuntimeError:
+            pass  # Loop closed
 
     def _present(self, frame: _Frame) -> None:
         """Show a decoded frame (on the app thread)."""
@@ -622,6 +663,7 @@ class Video(GraphicsWidget, can_focus=True):
         self._frame = frame
         if self.playing:
             self.position = frame.time
+            self.frames_shown += 1
         super().graphics_changed()
         target = self._target
         if frame.sixel is not None and target is not None and frame.target == target:

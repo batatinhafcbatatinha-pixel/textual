@@ -76,19 +76,27 @@ def encode_sixel(image: PILImage, colors: int = 256, fast: bool = False) -> str:
     padded[:height] = indices
     bands = padded.reshape(band_count, 6, width)
 
-    # bits[band, color, x] = sixel value (0..63) of `color` at column x in `band`.
+    # One output row per (band, color) pair present in the image.
+    stride = palette_count + 1
+    pairs = np.arange(band_count, dtype=np.intp)[:, None, None] * stride + bands
+    counts = np.bincount(pairs.ravel(), minlength=band_count * stride)
+    counts[palette_count::stride] = 0  # The padding sentinel isn't a color
+    present = np.flatnonzero(counts)
+    row_count = present.size
+    present_band = present // stride
+    present_color = present % stride
+    row_of_pair = np.full(band_count * stride, row_count, dtype=np.intp)
+    row_of_pair[present] = np.arange(row_count, dtype=np.intp)
+
+    # rows[row, x] = sixel value (0..63) of the row's color at column x.
     # Within a single pixel row every (band, x) has exactly one color, so plain
-    # fancy-index addition has no duplicate targets.
-    bits = np.zeros((band_count, palette_count + 1, width), dtype=np.uint8)
-    band_index = np.arange(band_count, dtype=np.intp)[:, None]
+    # fancy-index addition has no duplicate targets. Padding goes to a spare row.
+    rows = np.zeros((row_count + 1, width), dtype=np.uint8)
     column_index = np.arange(width, dtype=np.intp)[None, :]
     for bit in range(6):
-        bits[band_index, bands[:, bit, :], column_index] += 1 << bit
-    bits = bits[:, :palette_count]
-
-    present_band, present_color = np.nonzero(bits.any(axis=2))
-    rows = (bits[present_band, present_color] + 63).astype(np.uint8)
-    row_count = rows.shape[0]
+        rows[row_of_pair[pairs[:, bit, :]], column_index] += 1 << bit
+    rows = rows[:row_count]
+    rows += 63
 
     # Run detection over all rows at once.
     flat = rows.ravel()
