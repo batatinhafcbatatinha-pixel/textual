@@ -30,12 +30,12 @@ class VideoDemo(App):
         super().__init__()
         self.path = path
         self.muted = muted
-        self.colors = colors
+        self.video_colors = colors
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
-            yield Video(self.path, autoplay=True, colors=self.colors)
+            yield Video(self.path, autoplay=True, colors=self.video_colors)
             yield ProgressBar(show_eta=False, show_percentage=False)
             yield Label(id="status")
         yield Footer()
