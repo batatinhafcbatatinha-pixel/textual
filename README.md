@@ -20,7 +20,7 @@
 >
 > ```bash
 > pip install "textual[media] @ git+https://github.com/batatinhafcbatatinha-pixel/textual.git"
-> python examples/media/background_demo.py    # ou image_demo.py / video_demo.py
+> # demos (no clone do repositório): examples/media/background_demo.py, image_demo.py, video_demo.py
 > ```
 >
 > 📖 Documentação completa: [Imagens, vídeo e fundos (Sixel)](#imagens-e-vídeo-nativos-sixel--recurso-deste-fork)
