@@ -31,18 +31,18 @@ class ImageDemo(App):
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal():
-            yield Select([(name, name) for name in ("Uma", "Duas", "Três", "Quatro")], prompt="Abra-me por cima da imagem")
-            yield Input(placeholder="Digite aqui (a imagem não deve piscar)")
+            yield Select([(name, name) for name in ("One", "Two", "Three", "Four")], prompt="Open me over the image")
+            yield Input(placeholder="Type here (the image must not flicker)")
         with VerticalScroll():
             yield Image(self.images[0], id="big")
-            yield Label("Role para baixo ↓ e redimensione a janela.")
+            yield Label("Scroll down ↓ and resize the window.")
             with Horizontal():
                 for index in range(4):
                     yield Image(self.images[index % len(self.images)], classes="thumb")
             yield Label("fit=cover:")
             yield Image(self.images[-1], fit="cover", classes="cover")
             for index in range(3):
-                yield Label(f"Linha de texto {index}")
+                yield Label(f"Line of text {index}")
                 yield Image(self.images[index % len(self.images)])
         yield Footer()
 

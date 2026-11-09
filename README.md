@@ -6,24 +6,24 @@
 ![OS support](https://img.shields.io/badge/OS-macOS%20Linux%20Windows-red)
 
 > [!IMPORTANT]
-> ## ✨ O que este fork adiciona ao Textual
+> ## ✨ What this fork adds to Textual
 >
-> | | Recurso | Exemplo |
+> | | Feature | Example |
 > |---|---|---|
-> | 🖼️ | **Widget `Image` nativo**: imagens de verdade com Sixel, ou blocos `▀` coloridos em terminais sem Sixel | `yield Image("foto.png", fit="cover")` |
-> | 🎬 | **Widget `Video` com áudio**: PyAV + sounddevice, áudio como relógio mestre, descarte de quadros atrasados, ~27–30 fps no Windows Terminal | `yield Video("filme.mp4", autoplay=True)` |
-> | 🌄 | **Imagem de fundo em qualquer widget** (inclusive na `Screen`), com widgets transparentes deixando a imagem aparecer | `Screen { background-image: "fundo.jpg"; }` |
-> | 🎨 | **`background-color`** (alias de `background`) e **`background` aceitando imagem** | `background: $panel "textura.png" contain;` |
-> | ⚡ | **Sem flicker** ao rolar, redimensionar, abrir menus ou digitar: o texto nunca apaga a imagem, a imagem só é reenviada quando muda (ou só o pedaço que precisa), e tudo sai num único frame sincronizado | — |
-> | 🪟 | **Windows Terminal de primeira classe**: detecção automática de Sixel, tamanho da célula e *synchronized output*, que o Textual original nunca ativava no Windows | — |
-> | 🚀 | **Codificador Sixel vetorizado** (NumPy): ~22 ms para um quadro de 880×520 px | — |
+> | 🖼️ | **Native `Image` widget**: real images with Sixel, or colored `▀` half blocks on terminals without Sixel | `yield Image("photo.png", fit="cover")` |
+> | 🎬 | **`Video` widget with audio**: PyAV + sounddevice, the audio is the master clock, late frames are dropped, ~27–30 fps in Windows Terminal | `yield Video("movie.mp4", autoplay=True)` |
+> | 🌄 | **Background images on any widget** (including `Screen`), showing through transparent widgets | `Screen { background-image: "wallpaper.jpg"; }` |
+> | 🎨 | **`background-color`** (alias of `background`), and **`background` accepts an image** | `background: $panel "texture.png" contain;` |
+> | ⚡ | **No flicker** when scrolling, resizing, opening menus or typing: text never erases images, images are only re-sent when they change (or just the part that needs it), and everything goes out in a single synchronized frame | — |
+> | 🪟 | **First-class Windows Terminal support**: automatic detection of Sixel, cell size and *synchronized output*, which upstream Textual never enabled on Windows | — |
+> | 🚀 | **Vectorized Sixel encoder** (NumPy): ~22 ms for an 880×520 px frame | — |
 >
 > ```bash
 > pip install "textual[media] @ git+https://github.com/batatinhafcbatatinha-pixel/textual.git"
-> # demos (no clone do repositório): examples/media/background_demo.py, image_demo.py, video_demo.py
+> # demos (in a clone of the repository): examples/media/background_demo.py, image_demo.py, video_demo.py
 > ```
 >
-> 📖 Documentação completa: [Imagens, vídeo e fundos (Sixel)](#imagens-e-vídeo-nativos-sixel--recurso-deste-fork)
+> 📖 Full documentation: [Images, video and backgrounds (Sixel)](#native-images-video-and-backgrounds-sixel--added-by-this-fork)
 
 
 
@@ -146,29 +146,30 @@ Predefined themes ensure your apps will look good out of the box.
 
 <img src="https://img.spacergif.org/spacer.gif" width="1" height="32"/>
 
-## Imagens e vídeo nativos (Sixel) — recurso deste fork
+## Native images, video and backgrounds (Sixel) — added by this fork
 
-> Este fork adiciona dois widgets que não existem no Textual oficial: **`Image`** e **`Video`**.
-> Eles desenham pixels de verdade com **Sixel** quando o terminal suporta (por exemplo o
-> Windows Terminal da Microsoft Store) e usam blocos coloridos `▀` em qualquer outro terminal.
-> O foco é **não piscar** ao rolar a tela, redimensionar o terminal ou atualizar outros widgets.
+> This fork adds two widgets which don't exist in upstream Textual, **`Image`** and **`Video`**,
+> plus a **`background-image`** style for any widget. They draw real pixels with **Sixel** when the
+> terminal supports it (for example Windows Terminal from the Microsoft Store), and colored `▀`
+> half blocks in any other terminal. The focus is on **no flicker** when scrolling, resizing the
+> terminal, or updating other widgets.
 
-### Instalação
+### Installing
 
 ```bash
 pip install "textual[media] @ git+https://github.com/batatinhafcbatatinha-pixel/textual.git"
 ```
 
-O extra `media` instala as dependências opcionais:
+The `media` extra installs the optional dependencies:
 
-| Pacote | Usado por | Para quê |
+| Package | Used by | For |
 |---|---|---|
-| `pillow` | `Image`, `Video` | carregar e redimensionar imagens |
-| `numpy` | `Image`, `Video` | codificador Sixel rápido e fallback em blocos |
-| `av` (PyAV) | `Video` | decodificar vídeo e áudio (FFmpeg) |
-| `sounddevice` | `Video` | tocar o áudio (opcional: sem ele o vídeo toca mudo) |
+| `pillow` | `Image`, `Video`, backgrounds | loading and scaling images |
+| `numpy` | `Image`, `Video`, backgrounds | fast Sixel encoder and half-block fallback |
+| `av` (PyAV) | `Video` | decoding video and audio (FFmpeg) |
+| `sounddevice` | `Video` | playing audio (optional: without it, video plays muted) |
 
-Se faltar alguma dependência, o widget mostra uma mensagem explicando o que instalar, em vez de derrubar o app.
+If a dependency is missing, the widget shows a message explaining what to install instead of crashing the app.
 
 ### `Image`
 
@@ -181,7 +182,7 @@ class ImageApp(App):
     CSS = "Image { width: 60; }"
 
     def compose(self) -> ComposeResult:
-        yield Image("foto.png")                      # caminho
+        yield Image("photo.png")                     # path
         yield Image(open("logo.png", "rb").read())   # bytes
         yield Image(pil_image, fit="cover")          # PIL.Image
 
@@ -189,151 +190,151 @@ class ImageApp(App):
 ImageApp().run()
 ```
 
-| Parâmetro | Padrão | Descrição |
+| Parameter | Default | Description |
 |---|---|---|
-| `image` | `None` | caminho, `bytes`, `PIL.Image` ou `None` |
-| `fit` | `"contain"` | `contain` mantém a proporção e preenche as sobras com a cor de fundo; `cover` mantém a proporção e corta; `fill` estica |
-| `render_mode` | `"auto"` | `auto` (Sixel se o terminal suportar), `sixel` ou `halfblock` |
-| `colors` | `256` | número máximo de cores da paleta Sixel (2–256) |
+| `image` | `None` | path, `bytes`, `PIL.Image`, or `None` |
+| `fit` | `"contain"` | `contain` keeps the aspect ratio and fills the rest with the background color; `cover` keeps the aspect ratio and crops; `fill` stretches |
+| `render_mode` | `"auto"` | `auto` (Sixel if the terminal supports it), `sixel`, or `halfblock` |
+| `colors` | `256` | maximum number of colors in the Sixel palette (2–256) |
 
-- **Tamanho:** use CSS normal (`width`, `height`). Com `auto` (o padrão), o widget assume o tamanho natural da imagem, limitado à largura do container e mantendo a proporção.
-- **Trocar a imagem:** basta atribuir, por exemplo `widget.image = "outra.png"`. Também dá para mudar `fit` e `render_mode` em tempo real.
-- **Orientação:** a rotação EXIF é aplicada automaticamente, e PNGs com transparência são mesclados sobre a cor de fundo do widget.
+- **Size:** use regular CSS (`width`, `height`). With `auto` (the default), the widget takes the natural size of the image, limited to the width of its container and keeping the aspect ratio.
+- **Changing the image:** just assign it, e.g. `widget.image = "other.png"`. `fit` and `render_mode` can also be changed at runtime.
+- **Orientation:** EXIF rotation is applied automatically, and transparent PNGs are blended onto the widget's background color.
 
 ### `Video`
 
 ```python
 from textual.widgets import Video
 
-yield Video("filme.mp4", autoplay=True, loop=False, audio=True)
+yield Video("movie.mp4", autoplay=True, loop=False, audio=True)
 ```
 
-| Parâmetro | Padrão | Descrição |
+| Parameter | Default | Description |
 |---|---|---|
-| `source` | — | caminho (ou URL aceita pelo FFmpeg) |
-| `autoplay` | `False` | começa a tocar ao montar |
-| `loop` | `False` | recomeça ao terminar |
-| `audio` | `True` | toca a trilha de áudio |
-| `max_fps` | `None` | limita os quadros por segundo exibidos |
-| `fit` / `render_mode` | `"contain"` / `"auto"` | iguais aos do `Image` |
-| `colors` | `128` | cores por quadro (menos cores = mais rápido) |
+| `source` | — | path (or any URL FFmpeg accepts) |
+| `autoplay` | `False` | start playing when mounted |
+| `loop` | `False` | restart at the end |
+| `audio` | `True` | play the audio track |
+| `max_fps` | `None` | limit the frames per second displayed |
+| `fit` / `render_mode` | `"contain"` / `"auto"` | same as `Image` |
+| `colors` | `128` | colors per frame (fewer colors = faster) |
 
-| API | Descrição |
+| API | Description |
 |---|---|
-| `play()`, `pause()`, `toggle()`, `stop()` | controle de reprodução |
-| `seek(segundos)` | pula para uma posição |
-| `position`, `duration`, `playing`, `muted` | estado (reativos) |
-| `frames_shown`, `frames_dropped` | estatísticas de desempenho |
-| `Video.Started`, `Video.Paused`, `Video.Finished` | mensagens |
+| `play()`, `pause()`, `toggle()`, `stop()` | playback control |
+| `seek(seconds)` | jump to a position |
+| `position`, `duration`, `playing`, `muted` | state (reactive) |
+| `frames_shown`, `frames_dropped` | performance statistics |
+| `Video.Started`, `Video.Paused`, `Video.Finished` | messages |
 
-**Teclas** (com o vídeo focado): `espaço` play/pause · `←`/`→` voltar/avançar 5 s · `m` mudo.
+**Keys** (when the video has focus): `space` play/pause · `←`/`→` back/forward 5 s · `m` mute.
 
-**Sincronia:** o áudio é o relógio mestre. A decodificação, o redimensionamento (swscale) e a codificação Sixel rodam numa thread separada, e a interface nunca espera por elas. Se o terminal não acompanhar, quadros atrasados são **descartados**, de modo que o vídeo nunca fica atrás do som. Sem áudio, é usado o relógio do sistema.
+**Sync:** the audio is the master clock. Decoding, scaling (swscale) and Sixel encoding run in a separate thread, and the UI never waits for them. If the terminal can't keep up, late frames are **dropped**, so the video never falls behind the sound. Without audio, the system clock is used.
 
-### Fundo de imagem: `background-image`
+### Background images: `background-image`
 
-Qualquer widget, inclusive a `Screen`, pode ter uma imagem de fundo via CSS:
+Any widget, including `Screen`, can have a background image via CSS:
 
 ```css
 Screen {
     background-image: "wallpaper.jpg";
-    background-image-fit: cover;          /* cover (padrão) | contain | fill */
+    background-image-fit: cover;          /* cover (default) | contain | fill */
 }
 
-/* Forma curta: cor, imagem e ajuste juntos */
-#painel { background: $panel "textura.png" contain; }
+/* Shorthand: color, image and fit together */
+#panel { background: $panel "texture.png" contain; }
 
-/* background-color agora existe (é um alias de background) */
+/* background-color now exists (it's an alias of background) */
 Button { background-color: $primary; }
 ```
 
-Ou em Python, em tempo de execução:
+Or from Python, at runtime:
 
 ```python
 self.screen.styles.background_image = "wallpaper.jpg"
 self.screen.styles.background_image_fit = "contain"
-self.screen.styles.background_image = "none"      # remove
-widget.styles.background_color = "red"            # alias de styles.background
+self.screen.styles.background_image = "none"      # remove it
+widget.styles.background_color = "red"            # alias of styles.background
 ```
 
-| Propriedade | Valores | Descrição |
+| Property | Values | Description |
 |---|---|---|
-| `background-image` | `"caminho"` ou `none` | imagem desenhada na área interna da borda (padding + conteúdo) |
-| `background-image-fit` | `cover`, `contain`, `fill` | como a imagem é ajustada (padrão `cover`) |
-| `background` | `<cor> ["caminho"] [ajuste]` | forma curta: aceita cor, imagem entre aspas e ajuste em qualquer ordem |
-| `background-color` | `<cor>` | alias de `background` (cor apenas) |
+| `background-image` | `"path"` or `none` | image drawn in the area inside the border (padding + content) |
+| `background-image-fit` | `cover`, `contain`, `fill` | how the image is scaled (default `cover`) |
+| `background` | `<color> ["path"] [fit]` | shorthand: accepts a color, a quoted image and a fit, in any order |
+| `background-color` | `<color>` | alias of `background` (color only) |
 
-**Caminhos relativos** são procurados primeiro a partir do diretório atual e depois a partir da pasta do módulo onde a sua classe `App` foi definida.
+**Relative paths** are resolved from the current working directory first, then from the folder of the module where your `App` class is defined.
 
-**O que aparece por cima do fundo:**
+**What shows on top of the background:**
 
-- **Widgets transparentes** (sem `background`, como `Label`, `Static` e containers) deixam a
-  imagem aparecer nas células em branco. Só as células com caracteres cobrem a imagem.
-- **Widgets com fundo** (`Input`, `Button`, `Select`, ou qualquer `background` com alpha > 0)
-  cobrem a imagem na área que ocupam. Num terminal não há mistura parcial entre texto e Sixel,
-  então um `background: $panel 60%` fica sólido sobre a imagem.
-- Quando algo que cobria a imagem sai da frente (um menu fecha, um texto encurta, um widget
-  rola ou some), o compositor reenvia **só aquele pedaço** da imagem, dentro do mesmo frame
-  sincronizado, sem flicker.
+- **Transparent widgets** (no `background`, such as `Label`, `Static` and containers) let the image
+  show through their blank cells. Only cells with characters cover the image.
+- **Widgets with a background** (`Input`, `Button`, `Select`, or any `background` with alpha > 0)
+  cover the image where they are. A terminal can't blend text with Sixel, so
+  `background: $panel 60%` is solid over the image.
+- When something that covered the image moves away (a menu closes, text gets shorter, a widget
+  scrolls or disappears), the compositor re-sends **only that part** of the image, in the same
+  synchronized frame, with no flicker.
 
-Em terminais sem Sixel a imagem de fundo vira blocos `▀` coloridos. Nesse modo, os widgets
-transparentes filhos mostram a cor de fundo normal, e não a imagem.
+On terminals without Sixel the background image is drawn with colored `▀` half blocks. In that mode,
+transparent child widgets show the regular background color, not the image.
 
 ### Demos
 
 ```bash
-python examples/media/image_demo.py [imagem ...]            # imagens num scroll + Select por cima
-python examples/media/video_demo.py [video] --mute --loop   # vídeo com barra de progresso e fps
-python examples/media/background_demo.py [imagem]           # background-image na Screen e num painel
+python examples/media/image_demo.py [image ...]            # images in a scroll view + a Select on top
+python examples/media/video_demo.py [video] --mute --loop  # video with a progress bar and fps
+python examples/media/background_demo.py [image]           # background-image on the Screen and on a panel
 ```
 
-`examples/media/make_sample.py` e `make_sample_video.py` geram os arquivos de exemplo (`sample.png` e `sample.mp4`).
+`examples/media/make_sample.py` and `make_sample_video.py` generate the sample files (`sample.png` and `sample.mp4`).
 
-### Como o flicker foi eliminado
+### How the flicker was removed
 
-No Windows Terminal (e na maioria dos terminais com Sixel), **escrever qualquer caractere sobre uma
-célula apaga a parte da imagem naquela célula**. O Textual redesenha a tela escrevendo texto, então
-a abordagem ingênua (desenhar a imagem depois de cada atualização) fica num ciclo de
-*apaga → redesenha*: é o pisca-pisca. A solução fica dentro do próprio compositor:
+In Windows Terminal (and most terminals with Sixel), **writing any character over a cell erases the
+part of the image in that cell**. Textual redraws the screen by writing text, so the naive approach
+(drawing the image after every update) is stuck in an *erase → redraw* loop: that's the flicker.
+The fix lives inside the compositor itself:
 
-1. **Células gráficas não são escritas.** O widget marca as células da imagem com um caractere
-   de uso privado. Ao gerar a saída, `Strip.render` troca essas células por `CSI n C`, que move o
-   cursor sem escrever nada, e a imagem permanece intacta.
-2. **A imagem só é reenviada quando muda.** A cada frame o compositor calcula, para cada widget
-   gráfico, a área visível (já considerando scroll e recorte) e a compara com o frame anterior.
-   O Sixel só é gerado quando a imagem é nova, se moveu, foi recortada de outro jeito, mudou de
-   conteúdo (novo quadro de vídeo) ou quando o terminal foi redimensionado. Digitar num `Input`
-   não reenvia nada.
-3. **Restos de imagem são limpos e buracos são consertados.** A área que uma imagem deixou de
-   ocupar (depois de um scroll ou de remover o widget) é marcada para redesenho, e o texto escrito
-   ali apaga a imagem antiga. O compositor também guarda, célula por célula, se o terminal está
-   mostrando a imagem. Quando uma célula volta a ser de imagem depois de ter sido apagada por texto
-   (menu fechado, texto encurtado), só aquele retângulo é reenviado.
-4. **Tudo num frame só.** A imagem é escrita antes do texto, no mesmo bloco de
-   *synchronized output* (`CSI ?2026h … l`). O terminal mostra o resultado de uma vez, e widgets
-   sobrepostos (menus, notificações) são escritos depois, ficando por cima da imagem.
-5. **Detecção automática.** Os drivers de Windows e Linux consultam o suporte a synchronized
-   output, o DA1 (que indica Sixel) e o tamanho da célula em pixels (`CSI 16 t`). Antes deste fork,
-   o driver de Windows nunca ativava o synchronized output.
+1. **Graphics cells are never written.** Widgets mark the cells covered by an image with a private-use
+   character. When the output is generated, `Strip.render` turns those cells into `CSI n C`, which
+   moves the cursor without writing anything, so the image stays intact.
+2. **An image is only re-sent when it changes.** On every frame the compositor works out the visible
+   area of each graphic (taking scrolling and clipping into account) and compares it with the
+   previous frame. A Sixel is only generated when the image is new, moved, is cropped differently,
+   changed content (a new video frame), or when the terminal was resized. Typing in an `Input`
+   re-sends nothing.
+3. **Leftovers are cleaned up and holes are repaired.** The area an image no longer covers (after a
+   scroll, or removing the widget) is marked for redrawing, and the text written there erases the old
+   image. The compositor also tracks, cell by cell, whether the terminal is showing the image. When a
+   cell goes back to being an image cell after text erased it (closed menu, shorter text), only that
+   rectangle is re-sent.
+4. **Everything in a single frame.** Images are written before the text, in the same *synchronized
+   output* block (`CSI ?2026h … l`). The terminal shows the result at once, and overlapping widgets
+   (menus, notifications) are written afterwards, so they stay on top of the image.
+5. **Automatic detection.** The Windows and Linux drivers query synchronized output support, DA1
+   (which reports Sixel), and the cell size in pixels (`CSI 16 t`). Before this fork, the Windows
+   driver never enabled synchronized output.
 
-O codificador Sixel (`textual/_sixel.py`) é vetorizado com NumPy: cerca de 22 ms para um quadro
-de 880×520 px com 128 cores. No Windows Terminal, o `Video` alcança cerca de 27–30 fps nesse tamanho.
+The Sixel encoder (`textual/_sixel.py`) is vectorized with NumPy: about 22 ms for an 880×520 px frame
+with 128 colors. In Windows Terminal, `Video` reaches about 27–30 fps at that size.
 
-### Variáveis de ambiente
+### Environment variables
 
-| Variável | Efeito |
+| Variable | Effect |
 |---|---|
-| `TEXTUAL_GRAPHICS=sixel` | força Sixel (útil se o terminal não anunciar o suporte) |
-| `TEXTUAL_GRAPHICS=halfblock` | força blocos coloridos em todos os widgets em modo `auto` |
+| `TEXTUAL_GRAPHICS=sixel` | force Sixel (useful if the terminal doesn't report support) |
+| `TEXTUAL_GRAPHICS=halfblock` | force half blocks for all widgets in `auto` mode |
 
-### Limitações conhecidas
+### Known limitations
 
-- Apenas Sixel; os protocolos Kitty e iTerm2 ainda não estão implementados (sem eles, usa-se `halfblock`).
-- Imagens não aparecem no modo *inline* (`App.run(inline=True)`), onde é usado `halfblock`.
-- Em telas com fundo esmaecido (por trás de um `ModalScreen`), a imagem não recebe o escurecimento.
-- Degradês em vídeo podem mostrar faixas com 128 cores; use `colors=256` para mais qualidade (com menos fps).
+- Sixel only; the Kitty and iTerm2 protocols aren't implemented yet (`halfblock` is used without Sixel).
+- Images aren't shown in *inline* mode (`App.run(inline=True)`), which uses `halfblock`.
+- On dimmed screens (behind a `ModalScreen`), images aren't dimmed.
+- Video gradients can show banding with 128 colors; use `colors=256` for better quality (at fewer fps).
 
-Detalhes de design em [`docs/superpowers/specs/2026-11-09-sixel-image-video-design.md`](docs/superpowers/specs/2026-11-09-sixel-image-video-design.md).
+Design details in [`docs/superpowers/specs/2026-11-09-sixel-image-video-design.md`](docs/superpowers/specs/2026-11-09-sixel-image-video-design.md).
 
 <img src="https://img.spacergif.org/spacer.gif" width="1" height="32"/>
 

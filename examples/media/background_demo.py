@@ -45,10 +45,10 @@ class BackgroundDemo(App):
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical(id="card"):
-            yield Label("Fundo de imagem com background-image")
-            yield Select([(name, name) for name in ("Um", "Dois", "Três")], prompt="Abra por cima")
-            yield Input(placeholder="Digite (o fundo não pisca)")
-            yield Label("Painel com imagem própria:")
+            yield Label("Background image with background-image")
+            yield Select([(name, name) for name in ("One", "Two", "Three")], prompt="Open me over the image")
+            yield Input(placeholder="Type here (the background must not flicker)")
+            yield Label("Panel with its own image:")
             yield Vertical(id="thumb")
         yield Footer()
 
