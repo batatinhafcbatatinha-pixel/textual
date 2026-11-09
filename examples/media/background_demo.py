@@ -47,7 +47,7 @@ class BackgroundDemo(App):
         with Vertical(id="card"):
             yield Label("Background image with background-image")
             yield Select([(name, name) for name in ("One", "Two", "Three")], prompt="Open me over the image")
-            yield Input(placeholder="Type here (the background must not flicker)")
+            yield Input(placeholder="Type here: no flicker")
             yield Label("Panel with its own image:")
             yield Vertical(id="thumb")
         yield Footer()

@@ -11,7 +11,7 @@
 > | | Feature | Example |
 > |---|---|---|
 > | 🖼️ | **Native `Image` widget**: real images with Sixel, or colored `▀` half blocks on terminals without Sixel | `yield Image("photo.png", fit="cover")` |
-> | 🎬 | **`Video` widget with audio**: PyAV + sounddevice, the audio is the master clock, late frames are dropped, ~27–30 fps in Windows Terminal | `yield Video("movie.mp4", autoplay=True)` |
+> | 🎬 | **`Video` widget with audio**: PyAV + sounddevice, the audio is the master clock, late frames are dropped, ~15 fps for real 720p footage, up to ~30 fps for simpler content in Windows Terminal | `yield Video("movie.mp4", autoplay=True)` |
 > | 🌄 | **Background images on any widget** (including `Screen`), showing through transparent widgets | `Screen { background-image: "wallpaper.jpg"; }` |
 > | 🎨 | **`background-color`** (alias of `background`), and **`background` accepts an image** | `background: $panel "texture.png" contain;` |
 > | ⚡ | **No flicker** when scrolling, resizing, opening menus or typing: text never erases images, images are only re-sent when they change (or just the part that needs it), and everything goes out in a single synchronized frame | — |
@@ -24,6 +24,21 @@
 > ```
 >
 > 📖 Full documentation: [Images, video and backgrounds (Sixel)](#native-images-video-and-backgrounds-sixel--added-by-this-fork)
+
+<table>
+<tr>
+<td width="33%"><img src="docs/images/fork/background.png" alt="background-image on the Screen and on a panel"></td>
+<td width="33%"><img src="docs/images/fork/image.png" alt="Image widget: fit modes and Sixel vs half blocks"></td>
+<td width="33%"><img src="docs/images/fork/video.png" alt="Video widget playing in Windows Terminal"></td>
+</tr>
+<tr>
+<td align="center"><b><code>background-image</code></b><br>on the <code>Screen</code> and on a panel</td>
+<td align="center"><b><code>Image</code></b><br><code>fit</code> modes, Sixel vs half blocks</td>
+<td align="center"><b><code>Video</code></b><br>with audio, in Windows Terminal</td>
+</tr>
+</table>
+
+<sub>Screenshots taken in Windows Terminal (Microsoft Store) with the demos in <code>examples/media</code>.</sub>
 
 
 
@@ -173,6 +188,8 @@ If a dependency is missing, the widget shows a message explaining what to instal
 
 ### `Image`
 
+![Image widget: fit modes and Sixel vs half blocks](docs/images/fork/image.png)
+
 ```python
 from textual.app import App, ComposeResult
 from textual.widgets import Image
@@ -203,6 +220,8 @@ ImageApp().run()
 
 ### `Video`
 
+![Video widget playing in Windows Terminal](docs/images/fork/video.png)
+
 ```python
 from textual.widgets import Video
 
@@ -232,6 +251,8 @@ yield Video("movie.mp4", autoplay=True, loop=False, audio=True)
 **Sync:** the audio is the master clock. Decoding, scaling (swscale) and Sixel encoding run in a separate thread, and the UI never waits for them. If the terminal can't keep up, late frames are **dropped**, so the video never falls behind the sound. Without audio, the system clock is used.
 
 ### Background images: `background-image`
+
+![background-image on the Screen and on a panel](docs/images/fork/background.png)
 
 Any widget, including `Screen`, can have a background image via CSS:
 
@@ -317,8 +338,10 @@ The fix lives inside the compositor itself:
    (which reports Sixel), and the cell size in pixels (`CSI 16 t`). Before this fork, the Windows
    driver never enabled synchronized output.
 
-The Sixel encoder (`textual/_sixel.py`) is vectorized with NumPy: about 22 ms for an 880×520 px frame
-with 128 colors. In Windows Terminal, `Video` reaches about 27–30 fps at that size.
+The Sixel encoder (`textual/_sixel.py`) is vectorized with NumPy: about 22 ms for a simple 880×520 px
+frame with 128 colors, and about 45 ms for a detailed frame of real footage at 960×560 px. In Windows
+Terminal, `Video` reaches about 27–30 fps with simple content and about 15 fps with real 720p footage
+at that size (fewer `colors` or a smaller widget are faster; late frames are dropped to stay in sync).
 
 ### Environment variables
 
