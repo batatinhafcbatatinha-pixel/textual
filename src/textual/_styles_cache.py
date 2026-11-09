@@ -12,6 +12,7 @@ from textual import log
 from textual._ansi_theme import DEFAULT_TERMINAL_THEME
 from textual._border import get_box, render_border_label, render_row
 from textual._context import active_app
+from textual._graphics import apply_background_strip
 from textual._opacity import _apply_opacity
 from textual._segment_tools import apply_hatch, line_pad, line_trim, make_blank
 from textual.color import TRANSPARENT, Color
@@ -64,6 +65,7 @@ class StylesCache:
         self._dirty_lines: set[int] = set()
         self._width = 1
         self._simple_strip: Strip | None = None
+        self._background_line: Callable[[int], Strip | None] | None = None
         """A simple strip consisting of left border + background + right border, which may be reused in a render."""
 
     def __rich_repr__(self) -> rich.repr.Result:
@@ -142,6 +144,7 @@ class StylesCache:
             opacity=widget.opacity,
             ansi_theme=app.ansi_theme,
             native_ansi=app.native_ansi_color,
+            background_line=widget._get_background_line_renderer(),
         )
 
         if widget.auto_links:
@@ -176,6 +179,7 @@ class StylesCache:
         opacity: float = 1.0,
         ansi_theme: TerminalTheme = DEFAULT_TERMINAL_THEME,
         native_ansi: bool = False,
+        background_line: Callable[[int], Strip | None] | None = None,
     ) -> list[Strip]:
         """Render a widget content plus CSS styles.
 
@@ -195,10 +199,15 @@ class StylesCache:
             opacity: Widget opacity.
             ansi_theme: Theme for ANSI colors.
             native_ansi: Use native ANSI colors?
+            background_line: Callable to get the background image cells of a line (inside the border).
 
         Returns:
             Rendered lines.
         """
+        if background_line is not None and background_line is not self._background_line:
+            # Background changed (e.g. a new size or image)
+            self.clear()
+        self._background_line = background_line
         if content_size is None:
             content_size = size
         if padding is None:
@@ -232,6 +241,7 @@ class StylesCache:
                     opacity,
                     ansi_theme,
                     native_ansi,
+                    background_line,
                 )
                 self._cache[y] = strip
             else:
@@ -279,6 +289,7 @@ class StylesCache:
         opacity: float,
         ansi_theme: TerminalTheme,
         native_ansi: bool,
+        background_line: Callable[[int], Strip | None] | None = None,
     ) -> Strip:
         """Render a styled line.
 
@@ -427,9 +438,9 @@ class StylesCache:
         elif (pad_top and y < gutter.top) or (
             pad_bottom and y >= height - gutter.bottom
         ):
-            if self._simple_strip is not None:
+            if self._simple_strip is not None and background_line is None:
                 return self._simple_strip
-            cache_simple_strip = True
+            cache_simple_strip = background_line is None
             background_rich_style = inner.rich_style
             left_style = Style(
                 foreground=base_background + border_left_color.multiply_alpha(opacity)
@@ -485,6 +496,17 @@ class StylesCache:
                     line = [left, *line]
                 else:
                     line = [*line, right]
+
+        # Background image cells replace blank cells inside the border
+        if background_line is not None and not (
+            (border_top and y == 0) or (border_bottom and y == height - 1)
+        ):
+            background_strip = background_line(y)
+            if background_strip is not None:
+                start = 1 if border_left else 0
+                line = apply_background_strip(
+                    line, background_strip, start, start + background_strip.cell_length
+                )
 
         # Draw any outline
         if (outline_top and y == 0) or (outline_bottom and y == height - 1):

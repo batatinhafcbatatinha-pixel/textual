@@ -12,6 +12,7 @@ without having to render the entire screen.
 
 from __future__ import annotations
 
+import re
 from operator import itemgetter
 from typing import (
     TYPE_CHECKING,
@@ -32,6 +33,7 @@ from rich.style import Style
 from textual import errors
 from textual._cells import cell_len
 from textual._context import visible_screen_stack
+from textual._graphics import GRAPHICS_CHAR
 from textual._loop import loop_last
 from textual.geometry import NULL_SPACING, Offset, Region, Size, Spacing
 from textual.map_geometry import MapGeometry
@@ -52,8 +54,39 @@ class ReflowResult(NamedTuple):
     resized: set[Widget]  # Widgets that have been resized
 
 
+_RE_GRAPHICS_SPLIT = re.compile(f"{GRAPHICS_CHAR}+|[^{GRAPHICS_CHAR}]+")
+
 # Maps a widget on to its geometry (information that describes its position in the composition)
 CompositorMap: TypeAlias = "dict[Widget, MapGeometry]"
+
+
+def _strip_runs(strip: Strip, x: int, y: int) -> Iterable[tuple[int, int, int, bool]]:
+    """Split a strip in to runs of graphics placeholders and other cells.
+
+    Args:
+        strip: A strip.
+        x: X offset of the strip.
+        y: Line of the strip.
+
+    Returns:
+        Runs of (y, x1, x2, is_graphic).
+    """
+    if not any(GRAPHICS_CHAR in segment.text for segment in strip):
+        if strip.cell_length:
+            yield (y, x, x + strip.cell_length, False)
+        return
+    for segment in strip:
+        segment_text = segment.text
+        if GRAPHICS_CHAR not in segment_text:
+            length = cell_len(segment_text)
+            if length:
+                yield (y, x, x + length, False)
+            x += length
+            continue
+        for part in _RE_GRAPHICS_SPLIT.findall(segment_text):
+            length = cell_len(part)
+            yield (y, x, x + length, part[0] == GRAPHICS_CHAR)
+            x += length
 
 
 class CompositorUpdate:
@@ -61,6 +94,15 @@ class CompositorUpdate:
 
     graphics: list[tuple[int, int, str]] = []
     """Graphics to write before the text, as (x, y, terminal sequence)."""
+
+    def written_runs(self) -> Iterable[tuple[int, int, int, bool]]:
+        """Get the cells this update writes.
+
+        Returns:
+            Runs of (y, x1, x2, is_graphic), where `is_graphic` is True for graphics
+            placeholders (which don't write anything).
+        """
+        return ()
 
     def render_graphics(self) -> str:
         """Render graphics (written before text, so overlapping text covers them).
@@ -128,6 +170,13 @@ class LayoutUpdate(CompositorUpdate):
             if not last:
                 append("\n")
         return "".join(sequences)
+
+    def written_runs(self) -> Iterable[tuple[int, int, int, bool]]:
+        for y, line in enumerate(self.strips, self.region.y):
+            x = self.region.x
+            for strip in line:
+                yield from _strip_runs(strip, x, y)
+                x += strip.cell_length
 
     def __rich_repr__(self) -> rich.repr.Result:
         yield self.region
@@ -290,6 +339,22 @@ class ChopsUpdate(CompositorUpdate):
         terminal_sequences = "".join(sequences)
         return terminal_sequences
 
+    def written_runs(self) -> Iterable[tuple[int, int, int, bool]]:
+        # Mirrors the logic in `render_segments`
+        chops = self.chops
+        chop_ends = self.chop_ends
+        for y, x1, x2 in self.spans:
+            line = chops[y]
+            ends = chop_ends[y]
+            for end, (x, strip) in zip(ends, line.items()):
+                if strip is None:
+                    continue
+                if x > x2 or end <= x1:
+                    continue
+                if not (x2 > x >= x1 and end <= x2):
+                    strip = strip.crop(0, min(end, x2) - x)
+                yield from _strip_runs(strip, x, y)
+
     def __rich_repr__(self) -> rich.repr.Result:
         yield from ()
 
@@ -328,6 +393,10 @@ class Compositor:
         self._graphics_placements: dict[Widget, tuple[tuple, Region]] = {}
         # Screen size when graphics were last written
         self._graphics_screen_size: Size | None = None
+        # Cells which currently show a graphic (one bytearray per line)
+        self._graphics_shown: list[bytearray] = []
+        # Graphics placements in the current update (front to back)
+        self._graphics_frame: list[tuple[Widget, tuple, Region, Region, Size]] = []
 
         # Mapping of line numbers on to lists of widget and regions
         self._layers_visible: list[list[tuple[Widget, Region, Region]]] | None = None
@@ -1143,6 +1212,8 @@ class Compositor:
             update = self.render_full_update(simplify=simplify)
         else:
             update = self.render_partial_update()
+        if update is not None and self._graphics_placements:
+            graphics = graphics + self._repair_graphics(update)
         if update is not None and graphics:
             update.graphics = graphics
         return update
@@ -1151,15 +1222,22 @@ class Compositor:
         """Forget which graphics have been written, so they are written again on the next update."""
         self._graphics_placements.clear()
         self._graphics_screen_size = None
+        self._graphics_shown = []
+        self._graphics_frame = []
 
     def _update_graphics(self, full: bool) -> list[tuple[int, int, str]]:
-        """Work out which graphics must be (re)written in this update.
+        """Write graphics which are new or changed (first phase of an update).
 
-        A graphic is written when it is new, or when its position, visible crop,
-        size or content changed (or always, after the terminal was resized). The regions of
-        written graphics are marked dirty so that anything in front of them is
-        written afterwards, and regions previously covered by graphics which
-        moved or disappeared are marked dirty so that text erases the stale image.
+        Cells covered by graphics are never written as text (see `Strip.render`), so
+        an image stays on screen until text is written over it. A graphic is
+        written in full when it is new, or when its position, visible crop, size or
+        content changed (or after the terminal was resized). Smaller repairs
+        (where text erased part of an image which is visible again) are done in
+        `_repair_graphics`, once the update has been rendered.
+
+        Regions of written graphics are marked dirty so that anything in front of
+        them is written afterwards, and regions no longer covered by a graphic are
+        marked dirty so that text erases the stale image.
 
         Args:
             full: Is this a full update?
@@ -1167,61 +1245,164 @@ class Compositor:
         Returns:
             A list of (x, y, sequence) to write before the text, back to front.
         """
+        visible_widgets = self.visible_widgets
         previous = self._graphics_placements
         if not previous and not any(
-            getattr(widget, "_graphics_active", False) for widget in self.visible_widgets
+            getattr(widget, "_graphics_active", False) for widget in visible_widgets
         ):
             return []
 
+        width, height = self.size
         screen_region = self.size.region
         # The terminal may discard images when resized, so write them all again.
         resized = self._graphics_screen_size != self.size
-        self._graphics_screen_size = self.size
+        if resized:
+            self._graphics_screen_size = self.size
+            self._graphics_shown = [bytearray(width) for _ in range(height)]
         intersection = Region.intersection
+
         # Visible widgets are ordered front to back
         placements: list[tuple[Widget, tuple, Region, Region, Size]] = []
-        for widget, (region, clip) in self.visible_widgets.items():
+        for widget, (region, clip) in visible_widgets.items():
             if not getattr(widget, "_graphics_active", False):
                 continue
-            content = region.shrink(widget.styles.gutter)
-            rect = intersection(intersection(content, clip), screen_region)
+            area = widget._graphics_area(region)
+            rect = intersection(intersection(area, clip), screen_region)
             if not rect.area:
                 continue
-            crop = Region(rect.x - content.x, rect.y - content.y, rect.width, rect.height)
-            key = (rect, crop, content.size, widget._graphics_generation)
-            placements.append((widget, key, rect, crop, content.size))
+            crop = Region(rect.x - area.x, rect.y - area.y, rect.width, rect.height)
+            key = (rect, crop, area.size, widget._graphics_state())
+            placements.append((widget, key, rect, crop, area.size))
+        self._graphics_frame = placements
+        current = {widget: (key, rect) for widget, key, rect, _, _ in placements}
 
         dirty = self._dirty_regions
+        for widget, (_key, rect) in previous.items():
+            new = current.get(widget)
+            if new is None or new[1] != rect:
+                dirty.add(rect)
+
         writes: list[tuple[int, int, str]] = []
         written: list[Region] = []
-        for widget, key, rect, crop, content_size in reversed(placements):
+        for widget, key, rect, crop, area_size in reversed(placements):
             old = previous.get(widget)
             if not (
                 resized
                 or old is None
                 or old[0] != key
-                # Something behind was rewritten over this graphic
+                # Something behind was written over this graphic
                 or any(rect.overlaps(other) for other in written)
             ):
                 continue
-            try:
-                sequence = widget._render_sixel(content_size, crop)
-            except Exception as error:
-                from textual import log
-
-                log.error(f"Unable to render graphics for {widget!r}: {error}")
-                continue
+            sequence = self._render_graphic(widget, area_size, crop)
             if sequence:
                 writes.append((rect.x, rect.y, sequence))
                 written.append(rect)
                 dirty.add(rect)
+                self._set_graphics_shown(rect, 1)
 
-        current = {widget: (key, rect) for widget, key, rect, _, _ in placements}
-        for widget, (_key, rect) in previous.items():
-            new = current.get(widget)
-            if new is None or new[1] != rect:
-                dirty.add(rect)
         self._graphics_placements = current
+        return writes
+
+    def _render_graphic(self, widget: Widget, area_size: Size, crop: Region) -> str:
+        try:
+            return widget._render_sixel(area_size, crop)
+        except Exception as error:
+            from textual import log
+
+            log.error(f"Unable to render graphics for {widget!r}: {error}")
+            return ""
+
+    def _set_graphics_shown(self, region: Region, value: int) -> None:
+        shown = self._graphics_shown
+        x1, x2 = region.column_span
+        fill = bytes([value]) * (x2 - x1)
+        for y in region.line_range:
+            if 0 <= y < len(shown):
+                shown[y][x1:x2] = fill
+
+    def _repair_graphics(self, update: CompositorUpdate) -> list[tuple[int, int, str]]:
+        """Write graphics where text erased them, and they are visible again.
+
+        Called with the rendered update. Cells written as graphics placeholders
+        which don't currently show an image (text was written over them in an
+        earlier update) get the matching part of the graphic written again.
+
+        Args:
+            update: The rendered (but not yet written) update.
+
+        Returns:
+            A list of (x, y, sequence) to write before the text.
+        """
+        shown = self._graphics_shown
+        height = len(shown)
+        missing: dict[int, list[tuple[int, int]]] = {}
+        text_runs: list[tuple[int, int, int]] = []
+        for y, x1, x2, is_graphic in update.written_runs():
+            if not 0 <= y < height or x1 >= x2:
+                continue
+            if is_graphic:
+                row = shown[y]
+                x = x1
+                while x < x2:
+                    if row[x]:
+                        x += 1
+                        continue
+                    start = x
+                    while x < x2 and not row[x]:
+                        x += 1
+                    missing.setdefault(y, []).append((start, x))
+            else:
+                text_runs.append((y, x1, x2))
+
+        writes: list[tuple[int, int, str]] = []
+        if missing:
+            # Assign missing cells to the front-most graphic covering them, and
+            # group identical spans on consecutive lines into rectangles.
+            for widget, _key, rect, crop, area_size in self._graphics_frame:
+                rect_x1, rect_x2 = rect.column_span
+                spans: dict[tuple[int, int], list[int]] = {}
+                for y in rect.line_range:
+                    line = missing.get(y)
+                    if not line:
+                        continue
+                    remaining: list[tuple[int, int]] = []
+                    for x1, x2 in line:
+                        low, high = max(x1, rect_x1), min(x2, rect_x2)
+                        if low < high:
+                            spans.setdefault((low, high), []).append(y)
+                            if x1 < low:
+                                remaining.append((x1, low))
+                            if high < x2:
+                                remaining.append((high, x2))
+                        else:
+                            remaining.append((x1, x2))
+                    missing[y] = remaining
+                for (x1, x2), lines in spans.items():
+                    group_start = previous_y = lines[0]
+                    for y in [*lines[1:], None]:
+                        if y is not None and y == previous_y + 1:
+                            previous_y = y
+                            continue
+                        region = Region(
+                            x1, group_start, x2 - x1, previous_y - group_start + 1
+                        )
+                        region_crop = Region(
+                            crop.x + region.x - rect.x,
+                            crop.y + region.y - rect.y,
+                            region.width,
+                            region.height,
+                        )
+                        sequence = self._render_graphic(widget, area_size, region_crop)
+                        if sequence:
+                            writes.append((region.x, region.y, sequence))
+                            self._set_graphics_shown(region, 1)
+                        if y is not None:
+                            group_start = previous_y = y
+
+        # Text erases graphics
+        for y, x1, x2 in text_runs:
+            shown[y][x1:x2] = bytes(x2 - x1)
         return writes
 
     def render_inline(

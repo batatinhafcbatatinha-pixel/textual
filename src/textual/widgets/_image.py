@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Union
 
-from textual._graphics import Fit, RenderMode
+from textual._graphics import Fit, RenderMode, load_image
 from textual._graphics_widget import MEDIA_INSTALL_HINT, GraphicsWidget
 
 if TYPE_CHECKING:
@@ -15,30 +14,6 @@ if TYPE_CHECKING:
 
 ImageSource: TypeAlias = Union[str, Path, bytes, "PILImage", None]
 """A path, encoded image data, a Pillow image, or `None` for no image."""
-
-
-def load_image(source: ImageSource) -> PILImage | None:
-    """Load an image.
-
-    Args:
-        source: A path, encoded image data, or a Pillow image.
-
-    Returns:
-        A Pillow image (fully loaded, with EXIF orientation applied).
-    """
-    from PIL import Image as PILImageModule
-    from PIL import ImageOps
-
-    if source is None:
-        return None
-    if isinstance(source, PILImageModule.Image):
-        return source
-    if isinstance(source, bytes):
-        image = PILImageModule.open(BytesIO(source))
-    else:
-        image = PILImageModule.open(Path(source).expanduser())
-    image.load()
-    return ImageOps.exif_transpose(image) or image
 
 
 class Image(GraphicsWidget):

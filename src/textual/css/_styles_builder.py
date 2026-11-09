@@ -51,6 +51,7 @@ from textual.css.constants import (
     VALID_OVERFLOW,
     VALID_OVERLAY,
     VALID_POINTER,
+    VALID_BACKGROUND_IMAGE_FIT,
     VALID_POSITION,
     VALID_SCROLLBAR_GUTTER,
     VALID_SCROLLBAR_VISIBILITY,
@@ -81,6 +82,7 @@ from textual.css.types import (
     ScrollbarVisibility,
     TextOverflow,
     TextWrap,
+    BackgroundImageFit,
     Visibility,
 )
 from textual.geometry import Spacing, SpacingDimensions, clamp
@@ -109,6 +111,9 @@ class StylesBuilder:
         if not declaration.name:
             return
         rule_name = declaration.name.replace("-", "_")
+        # Aliases
+        if rule_name == "background_color":
+            rule_name = "background"
 
         if not declaration.tokens:
             self.error(
@@ -761,7 +766,59 @@ class StylesBuilder:
             self.styles._rules[name] = color  # type: ignore
 
     process_tint = process_color
-    process_background = process_color
+
+    def process_background(self, name: str, tokens: list[Token]) -> None:
+        """Process `background` (and its alias `background-color`).
+
+        Accepts a color, and optionally a quoted image path and an image fit, e.g.
+        `background: $surface "wallpaper.png" cover;`.
+        """
+        color_tokens: list[Token] = []
+        for token in tokens:
+            if token.name == "string":
+                self.styles._rules["background_image"] = token.value[1:-1]
+            elif token.name == "token" and token.value in VALID_BACKGROUND_IMAGE_FIT:
+                self.styles._rules["background_image_fit"] = cast(
+                    BackgroundImageFit, token.value
+                )
+            else:
+                color_tokens.append(token)
+        if color_tokens:
+            self.process_color("background", color_tokens)
+
+    process_background_color = process_background
+
+    def process_background_image(self, name: str, tokens: list[Token]) -> None:
+        if len(tokens) != 1:
+            self.error(name, tokens[0], "Expected a quoted image path or 'none'")
+        token = tokens[0]
+        if token.name == "string":
+            self.styles._rules["background_image"] = token.value[1:-1]
+        elif token.name == "token" and token.value == "none":
+            self.styles._rules["background_image"] = "none"
+        else:
+            self.error(
+                name,
+                token,
+                'Expected a quoted image path (e.g. "wallpaper.png") or none',
+            )
+
+    def process_background_image_fit(self, name: str, tokens: list[Token]) -> None:
+        for token in tokens:
+            if token.name == "token" and token.value in VALID_BACKGROUND_IMAGE_FIT:
+                self.styles._rules["background_image_fit"] = cast(
+                    BackgroundImageFit, token.value
+                )
+            else:
+                self.error(
+                    name,
+                    token,
+                    string_enum_help_text(
+                        "background-image-fit",
+                        valid_values=list(VALID_BACKGROUND_IMAGE_FIT),
+                        context="css",
+                    ),
+                )
     process_background_tint = process_color
     process_scrollbar_color = process_color
     process_scrollbar_color_hover = process_color

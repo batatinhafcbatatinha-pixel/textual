@@ -129,6 +129,15 @@ class IntegerProperty(GenericProperty[int, int]):
             raise StyleValueError(f"Expected a number here, got {value!r}")
 
 
+class StringProperty(GenericProperty[str, str]):
+    """Descriptor for a plain string."""
+
+    def validate_value(self, value: object) -> str:
+        if not isinstance(value, str):
+            raise StyleValueError(f"Expected a string here; found {value!r}")
+        return value
+
+
 class BooleanProperty(GenericProperty[bool, bool]):
     """A property that requires a True or False value."""
 

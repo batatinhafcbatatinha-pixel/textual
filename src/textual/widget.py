@@ -9,6 +9,7 @@ from asyncio import create_task, gather, wait
 from collections import Counter
 from contextlib import asynccontextmanager
 from fractions import Fraction
+import os
 from time import monotonic
 from types import TracebackType
 from typing import (
@@ -19,6 +20,7 @@ from typing import (
     Collection,
     Generator,
     Iterable,
+    Literal,
     Mapping,
     NamedTuple,
     Sequence,
@@ -55,6 +57,7 @@ from textual._debug import get_caller_file_and_line
 from textual._dispatch_key import dispatch_key
 from textual._easing import DEFAULT_SCROLL_EASING
 from textual._extrema import Extrema
+from textual._graphics import BackgroundImage, graphics_strip
 from textual._styles_cache import StylesCache
 from textual._types import AnimationLevel
 from textual.actions import SkipAction
@@ -478,6 +481,8 @@ class Widget(DOMNode):
         ] = FIFOCache(4)
 
         self._styles_cache = StylesCache()
+        self._background_image: BackgroundImage | None = None
+        self._background_line_cache: tuple[object, Callable[[int], Strip | None]] | None = None
         self._rich_style_cache: dict[tuple[str, ...], tuple[Style, Style]] = {}
         self._visual_style_cache: dict[tuple[str, ...], VisualStyle] = {}
 
@@ -4267,6 +4272,140 @@ class Widget(DOMNode):
             line = Strip.blank(self.size.width, self.visual_style.rich_style)
 
         return line
+
+    # -- Background image (the `background-image` style) -------------------
+
+    def _get_background_image_state(self) -> BackgroundImage | None:
+        """Get the loaded background image state, or `None` if there is no background image."""
+        path = self.styles.background_image
+        if not path or path == "none":
+            return None
+        if self._background_image is None:
+            self._background_image = BackgroundImage()
+        state = self._background_image
+        if path != state.path:
+            base_directory: str | None = None
+            try:
+                import inspect
+
+                base_directory = os.path.dirname(inspect.getfile(type(self.app)))
+            except Exception:
+                pass
+            state.load(path, base_directory)
+        return state if state.image is not None else None
+
+    def _background_graphics_mode(self) -> Literal["sixel", "halfblock"] | None:
+        """How the background image is drawn, or `None` if there is no background image."""
+        if self.styles.background_image == "none":
+            return None
+        if self._get_background_image_state() is None:
+            return None
+        app = self.app
+        return "sixel" if app.graphics_info.sixel and not app.is_inline else "halfblock"
+
+    @property
+    def _graphics_active(self) -> bool:
+        """Does the compositor need to draw graphics for this widget? (Used by the compositor.)"""
+        return self._background_graphics_mode() == "sixel"
+
+    def _graphics_area(self, region: Region) -> Region:
+        """The screen area covered by graphics, given the widget's screen region."""
+        return region.shrink(self.styles.border.spacing)
+
+    def _graphics_state(self) -> object:
+        """Changes when the graphics must be drawn again. (Used by the compositor.)"""
+        state = self._background_image
+        return (
+            None if state is None else state.generation,
+            self.styles.background_image_fit,
+            self.background_colors[1].rgb,
+        )
+
+    def _render_sixel(self, area_size: Size, crop: Region) -> str:
+        """Render part of the graphics as Sixel. (Used by the compositor.)"""
+        state = self._get_background_image_state()
+        if state is None:
+            return ""
+        return state.sixel(
+            area_size,
+            tuple(crop),  # type: ignore[arg-type]
+            self.app.graphics_info.cell_size,
+            self.styles.background_image_fit,
+            self.background_colors[1].rgb,
+        )
+
+    def _sees_through_graphics(self) -> bool:
+        """Do blank cells of this widget show an ancestor's Sixel background image?"""
+        node: DOMNode | None = self
+        while isinstance(node, Widget):
+            if node is not self and node._background_graphics_mode() == "sixel":
+                return True
+            if node.styles.background.a > 0:
+                return False
+            node = node._parent
+        return False
+
+    def _get_background_line_renderer(self) -> Callable[[int], Strip | None] | None:
+        """Get a callable that renders the background cells of a line (or `None`).
+
+        The background covers the area inside the border; blank cells in that area
+        are replaced with its cells.
+        """
+        mode = self._background_graphics_mode()
+        if mode is None and not self._sees_through_graphics():
+            self._background_line_cache = None
+            return None
+        width, height = self.region.size
+        spacing = self.styles.border.spacing
+        inner_width = width - spacing.width
+        if inner_width <= 0:
+            return None
+        state = self._background_image
+        key = (
+            mode,
+            self.region.size,
+            spacing,
+            self.styles.background_image_fit,
+            self.background_colors[1],
+            None if state is None else state.generation,
+        )
+        if self._background_line_cache is not None and self._background_line_cache[0] == key:
+            return self._background_line_cache[1]
+        renderer = self._make_background_line_renderer(mode, inner_width, height, spacing)
+        self._background_line_cache = (key, renderer)
+        return renderer
+
+    def _make_background_line_renderer(
+        self,
+        mode: Literal["sixel", "halfblock"] | None,
+        inner_width: int,
+        height: int,
+        spacing: Spacing,
+    ) -> Callable[[int], Strip | None]:
+        if mode == "halfblock":
+            state = self._background_image
+            assert state is not None
+            strips = state.halfblock(
+                Size(inner_width, height - spacing.height),
+                self.styles.background_image_fit,
+                self.background_colors[1].rgb,
+            )
+            top = spacing.top
+
+            def halfblock_line(y: int) -> Strip | None:
+                index = y - top
+                return strips[index] if 0 <= index < len(strips) else None
+
+            return halfblock_line
+        placeholder = graphics_strip(
+            inner_width, Style(bgcolor=self.background_colors[1].rich_color)
+        )
+        return lambda y: placeholder
+
+    def _graphics_info_changed(self) -> None:
+        """Called by the app when the terminal reported its graphics capabilities."""
+        self._styles_cache.clear()
+        self.refresh()
 
     def render_lines(self, crop: Region) -> list[Strip]:
         """Render the widget into lines.

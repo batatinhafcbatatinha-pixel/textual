@@ -12,8 +12,9 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Iterable, Literal
 
+from rich.cells import cell_len
 from rich.segment import Segment
 from rich.style import Style
 
@@ -229,3 +230,197 @@ def halfblock_strips(image: PILImage) -> list[Strip]:
             append(Segment("▀" * run, styles[previous]))
         strips.append(Strip(segments, width))
     return strips
+
+
+_RE_SPACE_RUNS = re.compile(r" +|[^ ]+")
+
+
+def apply_background_strip(
+    segments: Iterable[Segment], background: Strip, start: int, end: int
+) -> list[Segment]:
+    """Replace spaces in the cells [start, end) with the matching cells of a background.
+
+    Args:
+        segments: Segments of a line.
+        background: Background strip, covering cells start to end.
+        start: First cell covered by the background.
+        end: Cell after the last cell covered by the background.
+
+    Returns:
+        New segments.
+    """
+    output: list[Segment] = []
+    append = output.append
+    x = 0
+    for segment in segments:
+        text, style, control = segment
+        length = cell_len(text)
+        if (
+            control
+            or " " not in text
+            or x + length <= start
+            or x >= end
+            or len(text) != length  # Wide characters; leave alone
+        ):
+            append(segment)
+            x += length
+            continue
+        for match in _RE_SPACE_RUNS.finditer(text):
+            token = match.group()
+            token_start = x + match.start()
+            token_end = x + match.end()
+            if token[0] == " ":
+                low = max(token_start, start)
+                high = min(token_end, end)
+                if low < high:
+                    if token_start < low:
+                        append(Segment(" " * (low - token_start), style))
+                    output.extend(background.crop(low - start, high - start))
+                    if high < token_end:
+                        append(Segment(" " * (token_end - high), style))
+                    continue
+            append(Segment(token, style))
+        x += length
+    return output
+
+
+def load_image(source: object) -> PILImage | None:
+    """Load an image.
+
+    Args:
+        source: A path, encoded image data, or a Pillow image.
+
+    Returns:
+        A Pillow image (fully loaded, with EXIF orientation applied).
+    """
+    from io import BytesIO
+    from pathlib import Path
+
+    from PIL import Image as PILImageModule
+    from PIL import ImageOps
+
+    if source is None:
+        return None
+    if isinstance(source, PILImageModule.Image):
+        return source
+    if isinstance(source, bytes):
+        image = PILImageModule.open(BytesIO(source))
+    else:
+        image = PILImageModule.open(Path(str(source)).expanduser())
+    image.load()
+    return ImageOps.exif_transpose(image) or image
+
+
+class BackgroundImage:
+    """Loads and renders the `background-image` of a widget, with caching."""
+
+    def __init__(self) -> None:
+        self.path: str | None = None
+        self.image: PILImage | None = None
+        self.generation = 0
+        self._scaled: dict[tuple, PILImage] = {}
+        self._sixel: dict[tuple, str] = {}
+        self._halfblock: tuple[tuple, list[Strip]] | None = None
+
+    @staticmethod
+    def resolve(path: str, base_directory: str | None) -> str:
+        """Resolve a relative path from the working directory, then `base_directory`."""
+        from pathlib import Path
+
+        candidate = Path(path).expanduser()
+        if candidate.is_absolute() or candidate.exists() or base_directory is None:
+            return str(candidate)
+        relative = Path(base_directory) / candidate
+        return str(relative if relative.exists() else candidate)
+
+    def load(self, path: str, base_directory: str | None) -> PILImage | None:
+        """Load the image at `path` (cached; errors are logged and give `None`)."""
+        if path == self.path:
+            return self.image
+        self.path = path
+        self.generation += 1
+        self._scaled.clear()
+        self._sixel.clear()
+        self._halfblock = None
+        try:
+            self.image = load_image(self.resolve(path, base_directory))
+        except Exception as error:
+            from textual import log
+
+            log.error(f"Unable to load background image {path!r}: {error}")
+            self.image = None
+        return self.image
+
+    def scaled(
+        self, size: tuple[int, int], fit: Fit, background: tuple[int, int, int]
+    ) -> PILImage | None:
+        if self.image is None:
+            return None
+        key = (size, fit, background)
+        scaled = self._scaled.get(key)
+        if scaled is None:
+            if len(self._scaled) > 4:
+                self._scaled.clear()
+            scaled = self._scaled[key] = fit_image(self.image, size, fit, background)
+        return scaled
+
+    def sixel(
+        self,
+        area_size: Size,
+        crop: tuple[int, int, int, int],
+        cell_size: Size,
+        fit: Fit,
+        background: tuple[int, int, int],
+    ) -> str:
+        """Render part of the background as Sixel.
+
+        Args:
+            area_size: Size of the background area in cells.
+            crop: (x, y, width, height) of the part to render, in cells.
+            cell_size: Size of a cell in pixels.
+            fit: How the image is scaled.
+            background: Background color (for letterboxing and transparency).
+        """
+        from textual._sixel import encode_sixel
+
+        key = (area_size, crop, cell_size, fit, background)
+        sixel = self._sixel.get(key)
+        if sixel is not None:
+            return sixel
+        cell_width, cell_height = cell_size
+        image = self.scaled(
+            (area_size.width * cell_width, area_size.height * cell_height),
+            fit,
+            background,
+        )
+        if image is None:
+            return ""
+        x, y, width, height = crop
+        if (x, y, width, height) != (0, 0, *area_size):
+            image = image.crop(
+                (
+                    x * cell_width,
+                    y * cell_height,
+                    (x + width) * cell_width,
+                    (y + height) * cell_height,
+                )
+            )
+        sixel = encode_sixel(image)
+        if len(self._sixel) > 64:
+            self._sixel.clear()
+        self._sixel[key] = sixel
+        return sixel
+
+    def halfblock(
+        self, size: Size, fit: Fit, background: tuple[int, int, int]
+    ) -> list[Strip]:
+        """Render the background as half block strips (one per line)."""
+        key = (size, fit, background)
+        if self._halfblock is None or self._halfblock[0] != key:
+            image = (
+                self.scaled((size.width, size.height * 2), fit, background)
+                if size.area
+                else None
+            )
+            self._halfblock = (key, [] if image is None else halfblock_strips(image))
+        return self._halfblock[1]

@@ -11,7 +11,8 @@
 
 # Textual
 
-> **Fork:** esta versão inclui widgets nativos de **imagem e vídeo com Sixel, sem flicker**.
+> **Fork:** esta versão inclui widgets nativos de **imagem e vídeo com Sixel, sem flicker**,
+> e **imagem de fundo** em qualquer widget (`background-image`, `background-color`, `background: cor "imagem"`).
 > Veja [Imagens e vídeo nativos](#imagens-e-vídeo-nativos-sixel--recurso-deste-fork).
 
 <img align="right" width="250" alt="clock" src="https://github.com/user-attachments/assets/63e839c3-5b8e-478d-b78e-cf7647eb85e8" />
@@ -213,11 +214,61 @@ yield Video("filme.mp4", autoplay=True, loop=False, audio=True)
 
 **Sincronia:** o áudio é o relógio mestre. A decodificação, o redimensionamento (swscale) e a codificação Sixel rodam numa thread separada, e a interface nunca espera por elas. Se o terminal não acompanhar, quadros atrasados são **descartados**, de modo que o vídeo nunca fica atrás do som. Sem áudio, é usado o relógio do sistema.
 
+### Fundo de imagem: `background-image`
+
+Qualquer widget, inclusive a `Screen`, pode ter uma imagem de fundo via CSS:
+
+```css
+Screen {
+    background-image: "wallpaper.jpg";
+    background-image-fit: cover;          /* cover (padrão) | contain | fill */
+}
+
+/* Forma curta: cor, imagem e ajuste juntos */
+#painel { background: $panel "textura.png" contain; }
+
+/* background-color agora existe (é um alias de background) */
+Button { background-color: $primary; }
+```
+
+Ou em Python, em tempo de execução:
+
+```python
+self.screen.styles.background_image = "wallpaper.jpg"
+self.screen.styles.background_image_fit = "contain"
+self.screen.styles.background_image = "none"      # remove
+widget.styles.background_color = "red"            # alias de styles.background
+```
+
+| Propriedade | Valores | Descrição |
+|---|---|---|
+| `background-image` | `"caminho"` ou `none` | imagem desenhada na área interna da borda (padding + conteúdo) |
+| `background-image-fit` | `cover`, `contain`, `fill` | como a imagem é ajustada (padrão `cover`) |
+| `background` | `<cor> ["caminho"] [ajuste]` | forma curta: aceita cor, imagem entre aspas e ajuste em qualquer ordem |
+| `background-color` | `<cor>` | alias de `background` (cor apenas) |
+
+**Caminhos relativos** são procurados primeiro a partir do diretório atual e depois a partir da pasta do módulo onde a sua classe `App` foi definida.
+
+**O que aparece por cima do fundo:**
+
+- **Widgets transparentes** (sem `background`, como `Label`, `Static` e containers) deixam a
+  imagem aparecer nas células em branco. Só as células com caracteres cobrem a imagem.
+- **Widgets com fundo** (`Input`, `Button`, `Select`, ou qualquer `background` com alpha > 0)
+  cobrem a imagem na área que ocupam. Num terminal não há mistura parcial entre texto e Sixel,
+  então um `background: $panel 60%` fica sólido sobre a imagem.
+- Quando algo que cobria a imagem sai da frente (um menu fecha, um texto encurta, um widget
+  rola ou some), o compositor reenvia **só aquele pedaço** da imagem, dentro do mesmo frame
+  sincronizado, sem flicker.
+
+Em terminais sem Sixel a imagem de fundo vira blocos `▀` coloridos. Nesse modo, os widgets
+transparentes filhos mostram a cor de fundo normal, e não a imagem.
+
 ### Demos
 
 ```bash
 python examples/media/image_demo.py [imagem ...]            # imagens num scroll + Select por cima
 python examples/media/video_demo.py [video] --mute --loop   # vídeo com barra de progresso e fps
+python examples/media/background_demo.py [imagem]           # background-image na Screen e num painel
 ```
 
 `examples/media/make_sample.py` e `make_sample_video.py` geram os arquivos de exemplo (`sample.png` e `sample.mp4`).
@@ -237,8 +288,11 @@ a abordagem ingênua (desenhar a imagem depois de cada atualização) fica num c
    O Sixel só é gerado quando a imagem é nova, se moveu, foi recortada de outro jeito, mudou de
    conteúdo (novo quadro de vídeo) ou quando o terminal foi redimensionado. Digitar num `Input`
    não reenvia nada.
-3. **Restos de imagem são limpos.** A área que uma imagem deixou de ocupar (depois de um scroll
-   ou de remover o widget) é marcada para redesenho, e o texto escrito ali apaga a imagem antiga.
+3. **Restos de imagem são limpos e buracos são consertados.** A área que uma imagem deixou de
+   ocupar (depois de um scroll ou de remover o widget) é marcada para redesenho, e o texto escrito
+   ali apaga a imagem antiga. O compositor também guarda, célula por célula, se o terminal está
+   mostrando a imagem. Quando uma célula volta a ser de imagem depois de ter sido apagada por texto
+   (menu fechado, texto encurtado), só aquele retângulo é reenviado.
 4. **Tudo num frame só.** A imagem é escrita antes do texto, no mesmo bloco de
    *synchronized output* (`CSI ?2026h … l`). O terminal mostra o resultado de uma vez, e widgets
    sobrepostos (menus, notificações) são escritos depois, ficando por cima da imagem.

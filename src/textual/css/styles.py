@@ -35,6 +35,7 @@ from textual.css._style_properties import (
     SpacingProperty,
     SplitProperty,
     StringEnumProperty,
+    StringProperty,
     StyleFlagsProperty,
     TransitionsProperty,
 )
@@ -48,6 +49,7 @@ from textual.css.constants import (
     VALID_OVERFLOW,
     VALID_OVERLAY,
     VALID_POINTER,
+    VALID_BACKGROUND_IMAGE_FIT,
     VALID_POSITION,
     VALID_SCROLLBAR_GUTTER,
     VALID_SCROLLBAR_VISIBILITY,
@@ -69,6 +71,7 @@ from textual.css.types import (
     Overflow,
     Overlay,
     PointerShape,
+    BackgroundImageFit,
     ScrollbarGutter,
     Specificity3,
     Specificity6,
@@ -103,6 +106,8 @@ class RulesMap(TypedDict, total=False):
     text_style: Style
 
     background_tint: Color
+    background_image: str
+    background_image_fit: BackgroundImageFit
 
     opacity: float
     text_opacity: float
@@ -308,6 +313,24 @@ class StylesBase:
     You can also specify an opacity after a color e.g. "blue 10%"
     """
     background_tint = ColorProperty(Color(0, 0, 0, 0))
+    background_image = StringProperty("none", refresh_children=True)
+    """Path of an image drawn as the background (Sixel when supported, half blocks otherwise), or "none".
+
+    Relative paths are resolved from the working directory, then from the directory of the App's module.
+    """
+    background_image_fit: StringEnumProperty[BackgroundImageFit] = StringEnumProperty(
+        VALID_BACKGROUND_IMAGE_FIT, "cover", refresh_children=True
+    )
+    """How the background image is scaled: "cover" (default), "contain", or "fill"."""
+
+    @property
+    def background_color(self) -> Color:
+        """Alias of `background`."""
+        return self.background
+
+    @background_color.setter
+    def background_color(self, color: Color | str | None) -> None:
+        self.background = color  # type: ignore[assignment]
     """Set a color to tint (blend) with the background.
     Supports `Color` objects but also strings e.g. "red" or "#ff0000"
     You can also specify an opacity after a color e.g. "blue 10%"   
@@ -1126,6 +1149,10 @@ class Styles(StylesBase):
             append_declaration("background", self.background.hex)
         if "background_tint" in rules:
             append_declaration("background-tint", self.background_tint.hex)
+        if "background_image" in rules:
+            append_declaration("background-image", f'"{self.background_image}"')
+        if "background_image_fit" in rules:
+            append_declaration("background-image-fit", self.background_image_fit)
         if "text_style" in rules:
             append_declaration("text-style", str(get_rule("text_style")))
         if "tint" in rules:

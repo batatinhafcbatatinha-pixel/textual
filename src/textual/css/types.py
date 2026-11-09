@@ -41,6 +41,8 @@ TextAlign = Literal["left", "start", "center", "right", "end", "justify"]
 Constrain = Literal["none", "inflect", "inside"]
 Overlay = Literal["none", "screen"]
 Position = Literal["relative", "absolute"]
+BackgroundImageFit = Literal["contain", "cover", "fill"]
+
 PointerShape = Literal[
     "alias",
     "cell",

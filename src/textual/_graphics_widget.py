@@ -132,6 +132,12 @@ class GraphicsWidget(Widget):
         """Should the compositor draw this widget's graphics? (Used by the compositor.)"""
         return self.is_mounted and self.uses_sixel and self.get_frame() is not None
 
+    def _graphics_area(self, region: Region) -> Region:
+        return region.shrink(self.styles.gutter)
+
+    def _graphics_state(self) -> object:
+        return self._graphics_generation
+
     @property
     def _cell_size(self) -> Size:
         return self.app.graphics_info.cell_size
