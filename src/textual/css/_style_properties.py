@@ -1075,7 +1075,11 @@ class StyleFlagsProperty:
         Returns:
             The ``Style`` object.
         """
-        return obj.get_rule(self.name, Style.null())  # type: ignore[return-value]
+        value = obj.get_rule(self.name, Style.null())
+        if isinstance(value, str):
+            # Set from CSS text (e.g. `set_styles("text-style: bold")`)
+            value = Style.null() if value.strip() == "none" else Style.parse(value)
+        return value  # type: ignore[return-value]
 
     def __set__(self, obj: StylesBase, style_flags: Style | str | None) -> None:
         """Set the style using a style flag string.
