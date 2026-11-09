@@ -9,6 +9,7 @@ from ._directory_tree import DirectoryTree as DirectoryTree
 from ._footer import Footer as Footer
 from ._header import Header as Header
 from ._help_panel import HelpPanel as HelpPanel
+from ._image import Image as Image
 from ._input import Input as Input
 from ._key_panel import KeyPanel as KeyPanel
 from ._label import Label as Label
@@ -40,4 +41,5 @@ from ._tabs import Tabs as Tabs
 from ._text_area import TextArea as TextArea
 from ._tooltip import Tooltip as Tooltip
 from ._tree import Tree as Tree
+from ._video import Video as Video
 from ._welcome import Welcome as Welcome

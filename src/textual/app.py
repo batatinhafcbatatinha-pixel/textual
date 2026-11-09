@@ -73,6 +73,7 @@ from textual import (
 )
 from textual._animator import DEFAULT_EASING, Animatable, Animator, EasingFunction
 from textual._ansi_sequences import SYNC_END, SYNC_START
+from textual._graphics import GraphicsInfo, forced_render_mode
 from textual._ansi_theme import ALABASTER, MONOKAI
 from textual._callback import invoke
 from textual._compat import cached_property
@@ -640,6 +641,8 @@ class App(Generic[ReturnType], DOMNode):
         self._current_mode: str = self.DEFAULT_MODE
         """The current mode the app is in."""
         self._sync_available = False
+        self.graphics_info = GraphicsInfo.from_environment()
+        """Graphics capabilities of the terminal (updated when the terminal reports them)."""
 
         self.mouse_over: Widget | None = None
         """The widget directly under the mouse."""
@@ -4584,6 +4587,25 @@ class App(Generic[ReturnType], DOMNode):
         log.system("SynchronizedOutput mode is supported")
         if self._driver is not None and not self._driver.is_inline:
             self._sync_available = True
+
+    def _on_terminal_graphics_info(self, message: messages.TerminalGraphicsInfo) -> None:
+        info = self.graphics_info
+        sixel = info.sixel if message.sixel is None else message.sixel
+        if forced_render_mode() == "sixel":
+            sixel = True
+        cell_size = info.cell_size
+        if message.cell_size is not None and all(message.cell_size):
+            cell_size = Size(*message.cell_size)
+        new_info = GraphicsInfo(sixel=sixel, cell_size=cell_size)
+        if new_info == info:
+            return
+        log.system(f"Terminal graphics: {new_info!r}")
+        self.graphics_info = new_info
+        screens = {screen for stack in self._screen_stacks.values() for screen in stack}
+        for screen in screens:
+            for widget in screen.walk_children(with_self=False):
+                if hasattr(widget, "_graphics_info_changed"):
+                    widget._graphics_info_changed()
 
     def _begin_update(self) -> None:
         if self._sync_available and self._driver is not None:

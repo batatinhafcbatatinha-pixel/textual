@@ -1506,6 +1506,8 @@ class Screen(Generic[ScreenResultType], Widget):
         self.app._set_mouse_over(None, None)
         self._clear_tooltip()
         self.stack_updates += 1
+        # Another screen will cover our graphics; write them again when resumed.
+        self._compositor.reset_graphics()
 
     async def _on_resize(self, event: events.Resize) -> None:
         event.stop()

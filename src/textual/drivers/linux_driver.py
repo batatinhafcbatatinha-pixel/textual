@@ -321,6 +321,8 @@ class LinuxDriver(Driver):
             return
         if os.environ.get("TERM_PROGRAM", "") != "Apple_Terminal":
             self.write("\033[?2026$p")
+            # Device attributes (Sixel support) and cell size in pixels.
+            self.write("\x1b[c\x1b[16t")
             self.flush()
 
     @classmethod

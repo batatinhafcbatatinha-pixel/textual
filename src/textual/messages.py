@@ -104,6 +104,30 @@ class TerminalSupportsSynchronizedOutput(Message):
 
 
 @rich.repr.auto
+class TerminalGraphicsInfo(Message):
+    """Graphics capabilities reported by the terminal.
+
+    Values which weren't part of the report are `None`.
+    """
+
+    def __init__(
+        self, sixel: bool | None = None, cell_size: tuple[int, int] | None = None
+    ) -> None:
+        """
+        Args:
+            sixel: Does the terminal support Sixel?
+            cell_size: Size of a cell (width, height) in pixels.
+        """
+        super().__init__()
+        self.sixel = sixel
+        self.cell_size = cell_size
+
+    def __rich_repr__(self) -> rich.repr.Result:
+        yield "sixel", self.sixel, None
+        yield "cell_size", self.cell_size, None
+
+
+@rich.repr.auto
 class InBandWindowResize(Message):
     """Reports if the in-band window resize protocol is supported.
 

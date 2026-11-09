@@ -97,6 +97,9 @@ class WindowsDriver(Driver):
         self.write("\x1b[?25l")  # Hide cursor
         self.write("\033[?1004h")  # Enable FocusIn/FocusOut.
         self.write("\x1b[>1u")  # https://sw.kovidgoyal.net/kitty/keyboard-protocol/
+        # Query synchronized output support, device attributes (Sixel support),
+        # and the cell size in pixels. Responses are handled by the XTermParser.
+        self.write("\x1b[?2026$p\x1b[c\x1b[16t")
         self.flush()
         self._enable_bracketed_paste()
 

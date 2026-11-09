@@ -7,7 +7,7 @@ See [Line API](/guide/widgets#line-api) for how to use Strips.
 
 from __future__ import annotations
 
-from functools import lru_cache
+from functools import lru_cache, partial
 from typing import Any, Iterable, Iterator, Sequence
 
 import rich.repr
@@ -18,6 +18,7 @@ from rich.measure import Measurement
 from rich.segment import Segment
 from rich.style import Style, StyleType
 
+from textual._graphics import GRAPHICS_CHAR, render_graphics_text
 from textual._segment_tools import index_to_cell_position, line_pad
 from textual.cache import FIFOCache
 from textual.color import Color
@@ -717,16 +718,35 @@ class Strip:
         if self._render_cache is None:
             color_system = console._color_system or ColorSystem.TRUECOLOR
             render = self.render_style
-            self._render_cache = "".join(
-                [
-                    (
-                        text
-                        if style is None
-                        else render(style, text, color_system=color_system)
-                    )
-                    for text, style, _ in self._segments
-                ]
-            )
+            if any(GRAPHICS_CHAR in text for text, _, _ in self._segments):
+                # Cells covered by a graphic become cursor movements, so the
+                # graphic isn't erased by text.
+                render_graphics = partial(render, color_system=color_system)
+                self._render_cache = "".join(
+                    [
+                        (
+                            render_graphics_text(text, style, render_graphics)
+                            if GRAPHICS_CHAR in text
+                            else (
+                                text
+                                if style is None
+                                else render(style, text, color_system=color_system)
+                            )
+                        )
+                        for text, style, _ in self._segments
+                    ]
+                )
+            else:
+                self._render_cache = "".join(
+                    [
+                        (
+                            text
+                            if style is None
+                            else render(style, text, color_system=color_system)
+                        )
+                        for text, style, _ in self._segments
+                    ]
+                )
 
         return self._render_cache
 

@@ -26,6 +26,13 @@ _re_terminal_mode_response = re.compile(
 
 _re_cursor_position = re.compile(r"\x1b\[(?P<row>\d+);(?P<col>\d+)R")
 
+_re_device_attributes = re.compile(r"^\x1b\[\?(?P<attributes>[\d;]*)c\Z")
+"""Primary device attributes (DA1) response."""
+_re_device_attributes_prefix = re.compile(r"^\x1b\[\?[\d;]*c?\Z")
+"""A possibly incomplete DA1 response (which may be longer than the usual search threshold)."""
+_re_cell_size = re.compile(r"^\x1b\[6;(?P<height>\d+);(?P<width>\d+)t\Z")
+"""Response to a cell size in pixels request (CSI 16 t)."""
+
 BRACKETED_PASTE_START: Final[str] = "\x1b[200~"
 """Sequence received when a bracketed paste event starts."""
 BRACKETED_PASTE_END: Final[str] = "\x1b[201~"
@@ -253,7 +260,10 @@ class XTermParser(Parser[Message]):
                     continue
                 else:
                     sequence += new_character
-                    if len(sequence) > _MAX_SEQUENCE_SEARCH_THRESHOLD:
+                    if len(sequence) > _MAX_SEQUENCE_SEARCH_THRESHOLD and not (
+                        len(sequence) < 256
+                        and _re_device_attributes_prefix.match(sequence)
+                    ):
                         reissue_sequence_as_keys(sequence)
                         break
 
@@ -284,6 +294,21 @@ class XTermParser(Parser[Message]):
                     break
 
                 if not bracketed_paste:
+                    # Terminal graphics capabilities
+                    if match := _re_device_attributes.match(sequence):
+                        attributes = match["attributes"].split(";")
+                        on_token(
+                            messages.TerminalGraphicsInfo(sixel="4" in attributes[1:])
+                        )
+                        break
+                    if match := _re_cell_size.match(sequence):
+                        on_token(
+                            messages.TerminalGraphicsInfo(
+                                cell_size=(int(match["width"]), int(match["height"]))
+                            )
+                        )
+                        break
+
                     # Check cursor position report
                     cursor_position_match = _re_cursor_position.match(sequence)
                     if cursor_position_match is not None:
