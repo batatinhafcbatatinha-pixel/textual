@@ -4591,8 +4591,9 @@ class App(Generic[ReturnType], DOMNode):
     def _on_terminal_graphics_info(self, message: messages.TerminalGraphicsInfo) -> None:
         info = self.graphics_info
         sixel = info.sixel if message.sixel is None else message.sixel
-        if forced_render_mode() == "sixel":
-            sixel = True
+        forced = forced_render_mode()
+        if forced is not None:
+            sixel = forced == "sixel"
         cell_size = info.cell_size
         if message.cell_size is not None and all(message.cell_size):
             cell_size = Size(*message.cell_size)

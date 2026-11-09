@@ -210,3 +210,21 @@ async def test_graphics_info_message_switches_to_sixel():
         await pilot.pause()
         await pilot.pause()
         assert sixel_sizes(app.take_frames()) == [(96, 64)]
+
+
+async def test_forced_halfblock_ignores_terminal_report(monkeypatch):
+    monkeypatch.setenv("TEXTUAL_GRAPHICS", "halfblock")
+
+    class ImageApp(RecordingApp):
+        CSS = "Image { width: 12; height: 4; }"
+
+        def compose(self) -> ComposeResult:
+            yield Image(make_image())
+
+    app = ImageApp()
+    async with app.run_test(size=(40, 10)) as pilot:
+        app.post_message(messages.TerminalGraphicsInfo(sixel=True))
+        await pilot.pause()
+        await pilot.pause()
+        assert not app.graphics_info.sixel
+        assert DCS not in app.take_frames()

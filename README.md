@@ -11,6 +11,9 @@
 
 # Textual
 
+> **Fork:** esta versão inclui widgets nativos de **imagem e vídeo com Sixel, sem flicker**.
+> Veja [Imagens e vídeo nativos](#imagens-e-vídeo-nativos-sixel--recurso-deste-fork).
+
 <img align="right" width="250" alt="clock" src="https://github.com/user-attachments/assets/63e839c3-5b8e-478d-b78e-cf7647eb85e8" />
 
 Build cross-platform user interfaces with a simple Python API. Run your apps in the terminal *or* a web browser.
@@ -123,6 +126,144 @@ Predefined themes ensure your apps will look good out of the box.
 
 </table>
 
+
+<img src="https://img.spacergif.org/spacer.gif" width="1" height="32"/>
+
+## Imagens e vídeo nativos (Sixel) — recurso deste fork
+
+> Este fork adiciona dois widgets que não existem no Textual oficial: **`Image`** e **`Video`**.
+> Eles desenham pixels de verdade com **Sixel** quando o terminal suporta (por exemplo o
+> Windows Terminal da Microsoft Store) e usam blocos coloridos `▀` em qualquer outro terminal.
+> O foco é **não piscar** ao rolar a tela, redimensionar o terminal ou atualizar outros widgets.
+
+### Instalação
+
+```bash
+pip install "textual[media] @ git+https://github.com/batatinhafcbatatinha-pixel/textual.git"
+```
+
+O extra `media` instala as dependências opcionais:
+
+| Pacote | Usado por | Para quê |
+|---|---|---|
+| `pillow` | `Image`, `Video` | carregar e redimensionar imagens |
+| `numpy` | `Image`, `Video` | codificador Sixel rápido e fallback em blocos |
+| `av` (PyAV) | `Video` | decodificar vídeo e áudio (FFmpeg) |
+| `sounddevice` | `Video` | tocar o áudio (opcional: sem ele o vídeo toca mudo) |
+
+Se faltar alguma dependência, o widget mostra uma mensagem explicando o que instalar, em vez de derrubar o app.
+
+### `Image`
+
+```python
+from textual.app import App, ComposeResult
+from textual.widgets import Image
+
+
+class ImageApp(App):
+    CSS = "Image { width: 60; }"
+
+    def compose(self) -> ComposeResult:
+        yield Image("foto.png")                      # caminho
+        yield Image(open("logo.png", "rb").read())   # bytes
+        yield Image(pil_image, fit="cover")          # PIL.Image
+
+
+ImageApp().run()
+```
+
+| Parâmetro | Padrão | Descrição |
+|---|---|---|
+| `image` | `None` | caminho, `bytes`, `PIL.Image` ou `None` |
+| `fit` | `"contain"` | `contain` mantém a proporção e preenche as sobras com a cor de fundo; `cover` mantém a proporção e corta; `fill` estica |
+| `render_mode` | `"auto"` | `auto` (Sixel se o terminal suportar), `sixel` ou `halfblock` |
+| `colors` | `256` | número máximo de cores da paleta Sixel (2–256) |
+
+- **Tamanho:** use CSS normal (`width`, `height`). Com `auto` (o padrão), o widget assume o tamanho natural da imagem, limitado à largura do container e mantendo a proporção.
+- **Trocar a imagem:** basta atribuir, por exemplo `widget.image = "outra.png"`. Também dá para mudar `fit` e `render_mode` em tempo real.
+- **Orientação:** a rotação EXIF é aplicada automaticamente, e PNGs com transparência são mesclados sobre a cor de fundo do widget.
+
+### `Video`
+
+```python
+from textual.widgets import Video
+
+yield Video("filme.mp4", autoplay=True, loop=False, audio=True)
+```
+
+| Parâmetro | Padrão | Descrição |
+|---|---|---|
+| `source` | — | caminho (ou URL aceita pelo FFmpeg) |
+| `autoplay` | `False` | começa a tocar ao montar |
+| `loop` | `False` | recomeça ao terminar |
+| `audio` | `True` | toca a trilha de áudio |
+| `max_fps` | `None` | limita os quadros por segundo exibidos |
+| `fit` / `render_mode` | `"contain"` / `"auto"` | iguais aos do `Image` |
+| `colors` | `128` | cores por quadro (menos cores = mais rápido) |
+
+| API | Descrição |
+|---|---|
+| `play()`, `pause()`, `toggle()`, `stop()` | controle de reprodução |
+| `seek(segundos)` | pula para uma posição |
+| `position`, `duration`, `playing`, `muted` | estado (reativos) |
+| `frames_shown`, `frames_dropped` | estatísticas de desempenho |
+| `Video.Started`, `Video.Paused`, `Video.Finished` | mensagens |
+
+**Teclas** (com o vídeo focado): `espaço` play/pause · `←`/`→` voltar/avançar 5 s · `m` mudo.
+
+**Sincronia:** o áudio é o relógio mestre. A decodificação, o redimensionamento (swscale) e a codificação Sixel rodam numa thread separada, e a interface nunca espera por elas. Se o terminal não acompanhar, quadros atrasados são **descartados**, de modo que o vídeo nunca fica atrás do som. Sem áudio, é usado o relógio do sistema.
+
+### Demos
+
+```bash
+python examples/media/image_demo.py [imagem ...]            # imagens num scroll + Select por cima
+python examples/media/video_demo.py [video] --mute --loop   # vídeo com barra de progresso e fps
+```
+
+`examples/media/make_sample.py` e `make_sample_video.py` geram os arquivos de exemplo (`sample.png` e `sample.mp4`).
+
+### Como o flicker foi eliminado
+
+No Windows Terminal (e na maioria dos terminais com Sixel), **escrever qualquer caractere sobre uma
+célula apaga a parte da imagem naquela célula**. O Textual redesenha a tela escrevendo texto, então
+a abordagem ingênua (desenhar a imagem depois de cada atualização) fica num ciclo de
+*apaga → redesenha*: é o pisca-pisca. A solução fica dentro do próprio compositor:
+
+1. **Células gráficas não são escritas.** O widget marca as células da imagem com um caractere
+   de uso privado. Ao gerar a saída, `Strip.render` troca essas células por `CSI n C`, que move o
+   cursor sem escrever nada, e a imagem permanece intacta.
+2. **A imagem só é reenviada quando muda.** A cada frame o compositor calcula, para cada widget
+   gráfico, a área visível (já considerando scroll e recorte) e a compara com o frame anterior.
+   O Sixel só é gerado quando a imagem é nova, se moveu, foi recortada de outro jeito, mudou de
+   conteúdo (novo quadro de vídeo) ou quando o terminal foi redimensionado. Digitar num `Input`
+   não reenvia nada.
+3. **Restos de imagem são limpos.** A área que uma imagem deixou de ocupar (depois de um scroll
+   ou de remover o widget) é marcada para redesenho, e o texto escrito ali apaga a imagem antiga.
+4. **Tudo num frame só.** A imagem é escrita antes do texto, no mesmo bloco de
+   *synchronized output* (`CSI ?2026h … l`). O terminal mostra o resultado de uma vez, e widgets
+   sobrepostos (menus, notificações) são escritos depois, ficando por cima da imagem.
+5. **Detecção automática.** Os drivers de Windows e Linux consultam o suporte a synchronized
+   output, o DA1 (que indica Sixel) e o tamanho da célula em pixels (`CSI 16 t`). Antes deste fork,
+   o driver de Windows nunca ativava o synchronized output.
+
+O codificador Sixel (`textual/_sixel.py`) é vetorizado com NumPy: cerca de 22 ms para um quadro
+de 880×520 px com 128 cores. No Windows Terminal, o `Video` alcança cerca de 27–30 fps nesse tamanho.
+
+### Variáveis de ambiente
+
+| Variável | Efeito |
+|---|---|
+| `TEXTUAL_GRAPHICS=sixel` | força Sixel (útil se o terminal não anunciar o suporte) |
+| `TEXTUAL_GRAPHICS=halfblock` | força blocos coloridos em todos os widgets em modo `auto` |
+
+### Limitações conhecidas
+
+- Apenas Sixel; os protocolos Kitty e iTerm2 ainda não estão implementados (sem eles, usa-se `halfblock`).
+- Imagens não aparecem no modo *inline* (`App.run(inline=True)`), onde é usado `halfblock`.
+- Em telas com fundo esmaecido (por trás de um `ModalScreen`), a imagem não recebe o escurecimento.
+- Degradês em vídeo podem mostrar faixas com 128 cores; use `colors=256` para mais qualidade (com menos fps).
+
+Detalhes de design em [`docs/superpowers/specs/2026-11-09-sixel-image-video-design.md`](docs/superpowers/specs/2026-11-09-sixel-image-video-design.md).
 
 <img src="https://img.spacergif.org/spacer.gif" width="1" height="32"/>
 
