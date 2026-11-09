@@ -305,7 +305,7 @@ transparent child widgets show the regular background color, not the image.
 
 ```bash
 python examples/media/image_demo.py [image ...]            # images in a scroll view + a Select on top
-python examples/media/video_demo.py [video] --mute --loop  # video with a progress bar and fps
+python examples/media/video_demo.py [video] --mute --loop --colors 256  # video with a progress bar and fps
 python examples/media/background_demo.py [image]           # background-image on the Screen and on a panel
 ```
 

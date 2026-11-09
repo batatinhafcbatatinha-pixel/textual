@@ -3,7 +3,7 @@
 Run with: python examples/media/video_demo.py [video]
 
 Keys: space = play/pause, left/right = seek, m = mute, f = cycle fit, l = loop.
-Options: --mute starts muted, --loop loops.
+Options: --mute starts muted, --loop loops, --colors N sets the Sixel colors per frame.
 """
 
 import sys
@@ -26,15 +26,16 @@ class VideoDemo(App):
     """
     BINDINGS = [("f", "cycle_fit", "Cycle fit"), ("l", "toggle_loop", "Loop")]
 
-    def __init__(self, path: str, muted: bool = False) -> None:
+    def __init__(self, path: str, muted: bool = False, colors: int = 128) -> None:
         super().__init__()
         self.path = path
         self.muted = muted
+        self.colors = colors
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical():
-            yield Video(self.path, autoplay=True)
+            yield Video(self.path, autoplay=True, colors=self.colors)
             yield ProgressBar(show_eta=False, show_percentage=False)
             yield Label(id="status")
         yield Footer()
@@ -59,7 +60,7 @@ class VideoDemo(App):
         mute = " 🔇" if video.muted else ""
         self.query_one("#status", Label).update(
             f"{state} {video.position:6.1f}s / {video.duration:.1f}s  fit={video.fit}"
-            f"  loop={video.loop}{mute}  {self.fps:4.1f} fps"
+            f"  loop={video.loop}{mute}  colors={video.sixel_colors}  {self.fps:4.1f} fps"
             f"  shown={video.frames_shown} dropped={video.frames_dropped}"
         )
 
@@ -73,8 +74,14 @@ class VideoDemo(App):
 
 
 if __name__ == "__main__":
-    args = [arg for arg in sys.argv[1:] if arg != "--mute"]
-    args = [arg for arg in args if arg != "--loop"]
-    app = VideoDemo(args[0] if args else str(SAMPLE), muted="--mute" in sys.argv)
-    app.loop = "--loop" in sys.argv
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Video widget demo")
+    parser.add_argument("video", nargs="?", default=str(SAMPLE))
+    parser.add_argument("--mute", action="store_true", help="start muted")
+    parser.add_argument("--loop", action="store_true", help="loop the video")
+    parser.add_argument("--colors", type=int, default=128, help="Sixel colors per frame (2-256)")
+    options = parser.parse_args()
+    app = VideoDemo(options.video, muted=options.mute, colors=options.colors)
+    app.loop = options.loop
     app.run()
