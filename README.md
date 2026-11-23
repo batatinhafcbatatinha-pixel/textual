@@ -40,12 +40,6 @@
 
 ## Native images, video and backgrounds (Sixel) — added by this fork
 
-> This fork adds two widgets which don't exist in upstream Textual, **`Image`** and **`Video`**,
-> plus a **`background-image`** style for any widget. They draw real pixels with **Sixel** when the
-> terminal supports it (for example Windows Terminal from the Microsoft Store), and colored `▀`
-> half blocks in any other terminal. The focus is on **no flicker** when scrolling, resizing the
-> terminal, or updating other widgets.
-
 ### Installing
 
 ```bash
@@ -64,8 +58,6 @@ The `media` extra installs the optional dependencies:
 If a dependency is missing, the widget shows a message explaining what to install instead of crashing the app.
 
 ### `Image`
-
-![Image widget: fit modes and Sixel vs half blocks](docs/images/fork/image.png)
 
 ```python
 from textual.app import App, ComposeResult
@@ -97,8 +89,6 @@ ImageApp().run()
 
 ### `Video`
 
-![Video widget playing in Windows Terminal](docs/images/fork/video.png)
-
 ```python
 from textual.widgets import Video
 
@@ -128,8 +118,6 @@ yield Video("movie.mp4", autoplay=True, loop=False, audio=True)
 **Sync:** the audio is the master clock. Decoding, scaling (swscale) and Sixel encoding run in a separate thread, and the UI never waits for them. If the terminal can't keep up, late frames are **dropped**, so the video never falls behind the sound. Without audio, the system clock is used.
 
 ### Background images: `background-image`
-
-![background-image on the Screen and on a panel](docs/images/fork/background.png)
 
 Any widget, including `Screen`, can have a background image via CSS:
 
@@ -235,5 +223,3 @@ at that size (fewer `colors` or a smaller widget are faster; late frames are dro
 - Video gradients can show banding with 128 colors; use `colors=256` for better quality (at fewer fps).
 
 Design details in [`docs/superpowers/specs/2026-11-09-sixel-image-video-design.md`](docs/superpowers/specs/2026-11-09-sixel-image-video-design.md).
-
-<img src="https://img.spacergif.org/spacer.gif" width="1" height="32"/>
